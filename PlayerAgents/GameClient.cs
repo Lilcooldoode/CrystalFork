@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Drawing;
@@ -448,7 +449,30 @@ public class GameClient
                 break;
             case S.ObjectStruck os:
                 if (os.AttackerID == _objectId)
+                {
                     _lastAttackTarget = os.ObjectID;
+                    if (_trackedObjects.TryGetValue(os.ObjectID, out var targ) && targ.Type == ObjectType.Monster)
+                    {
+                        targ.EngagedWith = _objectId;
+                        targ.LastEngagedTime = DateTime.UtcNow;
+                    }
+                }
+                else if (_trackedObjects.TryGetValue(os.AttackerID, out var atk) &&
+                         _trackedObjects.TryGetValue(os.ObjectID, out var target))
+                {
+                    // player attacking monster
+                    if (atk.Type == ObjectType.Player && atk.Id != _objectId && target.Type == ObjectType.Monster)
+                    {
+                        target.EngagedWith = atk.Id;
+                        target.LastEngagedTime = DateTime.UtcNow;
+                    }
+                    // monster attacking player
+                    else if (atk.Type == ObjectType.Monster && target.Type == ObjectType.Player && target.Id != _objectId)
+                    {
+                        atk.EngagedWith = target.Id;
+                        atk.LastEngagedTime = DateTime.UtcNow;
+                    }
+                }
                 break;
             case S.DamageIndicator di:
                 if (di.ObjectID == _objectId && di.Type != DamageType.Miss && _lastStruckAttacker.HasValue)

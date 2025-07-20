@@ -1,5 +1,6 @@
 using ClientPackets;
 using Shared;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 
@@ -155,6 +156,9 @@ public class BaseAI
                 if (obj.Type != ObjectType.Monster) continue;
                 if (obj.Dead) continue;
                 if (IgnoredAIs.Contains(obj.AI)) continue;
+                if (obj.EngagedWith.HasValue && obj.EngagedWith.Value != Client.ObjectId &&
+                    DateTime.UtcNow - obj.LastEngagedTime < TimeSpan.FromSeconds(5))
+                    continue;
                 int dist = Functions.MaxDistance(current, obj.Location);
                 if (dist < bestDist)
                 {
