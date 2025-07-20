@@ -41,6 +41,36 @@ public class GameClient
         // StartGame will be sent once LoginSuccess is received
     }
 
+    private async Task CreateAccountAsync()
+    {
+        if (_stream == null) return;
+        Console.WriteLine($"Creating account '{_config.AccountID}'...");
+        var acc = new C.NewAccount
+        {
+            AccountID = _config.AccountID,
+            Password = _config.Password,
+            BirthDate = DateTime.Today,
+            UserName = _config.AccountID,
+            SecretQuestion = string.Empty,
+            SecretAnswer = string.Empty,
+            EMailAddress = string.Empty
+        };
+        await SendAsync(acc);
+    }
+
+    private async Task CreateCharacterAsync()
+    {
+        if (_stream == null) return;
+        Console.WriteLine($"Creating character '{_config.CharacterName}'...");
+        var chr = new C.NewCharacter
+        {
+            Name = _config.CharacterName,
+            Gender = MirGender.Male,
+            Class = MirClass.Warrior
+        };
+        await SendAsync(chr);
+    }
+
     public async Task RunAsync()
     {
         if (_stream == null) return;
@@ -92,11 +122,38 @@ public class GameClient
     {
         switch (p)
         {
+            case S.Login l:
+                if (l.Result == 3)
+                {
+                    Console.WriteLine("Account not found, creating...");
+                    _ = CreateAccountAsync();
+                }
+                else if (l.Result != 4)
+                {
+                    Console.WriteLine($"Login failed: {l.Result}");
+                }
+                else
+                {
+                    Console.WriteLine("Wrong password");
+                }
+                break;
+            case S.NewAccount na:
+                if (na.Result == 8)
+                {
+                    Console.WriteLine("Account created");
+                    _ = LoginAsync();
+                }
+                else
+                {
+                    Console.WriteLine($"Account creation failed: {na.Result}");
+                }
+                break;
             case S.LoginSuccess ls:
                 var match = ls.Characters.FirstOrDefault(c => c.Name.Equals(_config.CharacterName, StringComparison.OrdinalIgnoreCase));
                 if (match == null)
                 {
-                    Console.WriteLine($"Character '{_config.CharacterName}' not found.");
+                    Console.WriteLine($"Character '{_config.CharacterName}' not found, creating...");
+                    _ = CreateCharacterAsync();
                 }
                 else
                 {
@@ -105,6 +162,15 @@ public class GameClient
                     var start = new C.StartGame { CharacterIndex = match.Index };
                     _ = SendAsync(start);
                 }
+                break;
+            case S.NewCharacterSuccess ncs:
+                Console.WriteLine("Character created");
+                _selectedIndex = ncs.CharInfo.Index;
+                var startNew = new C.StartGame { CharacterIndex = ncs.CharInfo.Index };
+                _ = SendAsync(startNew);
+                break;
+            case S.NewCharacter nc:
+                Console.WriteLine($"Character creation failed: {nc.Result}");
                 break;
             case S.StartGame sg:
                 var reason = sg.Result switch
