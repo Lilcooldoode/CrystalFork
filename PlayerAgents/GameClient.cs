@@ -22,6 +22,7 @@ public class GameClient
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
     private string _playerName = string.Empty;
+    private uint _objectId;
     private string _currentMapFile = string.Empty;
     private PlayerAgents.Map.MapData? _mapData;
 
@@ -31,6 +32,9 @@ public class GameClient
     private ushort _level;
     private UserItem[]? _inventory;
     private UserItem[]? _equipment;
+
+    private uint? _lastAttackTarget;
+    private uint? _lastStruckAttacker;
 
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
@@ -146,6 +150,13 @@ public class GameClient
         Console.WriteLine($"I am walking to {target.X}, {target.Y}");
         var walk = new C.Walk { Direction = direction };
         await SendAsync(walk);
+    }
+
+    public async Task AttackAsync(MirDirection direction)
+    {
+        if (_stream == null) return;
+        var attack = new C.Attack { Direction = direction, Spell = Spell.None };
+        await SendAsync(attack);
     }
 
     public async Task EquipItemAsync(UserItem item, EquipmentSlot slot)
@@ -365,6 +376,7 @@ public class GameClient
                 _ = LoadMapAsync();
                 break;
             case S.UserInformation info:
+                _objectId = info.ObjectID;
                 _playerClass = info.Class;
                 _playerName = info.Name;
                 _currentLocation = info.Location;
@@ -418,6 +430,37 @@ public class GameClient
                 {
                     objR.Location = oru.Location;
                     objR.Direction = oru.Direction;
+                }
+                break;
+            case S.Struck st:
+                _lastStruckAttacker = st.AttackerID;
+                break;
+            case S.ObjectStruck os:
+                if (os.AttackerID == _objectId)
+                    _lastAttackTarget = os.ObjectID;
+                break;
+            case S.DamageIndicator di:
+                if (di.ObjectID == _objectId && di.Type != DamageType.Miss && _lastStruckAttacker.HasValue)
+                {
+                    string name = _trackedObjects.TryGetValue(_lastStruckAttacker.Value, out var atk) ? atk.Name : "Unknown";
+                    Console.WriteLine($"{name} has attacked me for {-di.Damage} damage");
+                    _lastStruckAttacker = null;
+                }
+                else if (_lastAttackTarget.HasValue && di.ObjectID == _lastAttackTarget.Value)
+                {
+                    if (di.Type == DamageType.Miss)
+                    {
+                        if (_trackedObjects.TryGetValue(di.ObjectID, out var targ))
+                            Console.WriteLine($"I attacked {targ.Name} and missed");
+                        else
+                            Console.WriteLine("I attacked an unknown target and missed");
+                    }
+                    else
+                    {
+                        string name = _trackedObjects.TryGetValue(di.ObjectID, out var targ) ? targ.Name : "Unknown";
+                        Console.WriteLine($"I have damaged {name} for {-di.Damage} damage");
+                    }
+                    _lastAttackTarget = null;
                 }
                 break;
             case S.ObjectDied od:

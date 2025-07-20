@@ -30,8 +30,10 @@ public class BaseAI
     }
 
     protected virtual int WalkDelay => 600;
+    protected virtual int AttackDelay => 1400;
     protected virtual TimeSpan EquipCheckInterval => TimeSpan.FromSeconds(5);
     private DateTime _nextEquipCheck = DateTime.UtcNow;
+    private DateTime _nextAttackTime = DateTime.UtcNow;
 
     protected virtual int GetItemScore(UserItem item, EquipmentSlot slot)
     {
@@ -179,6 +181,15 @@ public class BaseAI
                         await Client.WalkAsync(dir);
                     }
 
+                }
+                else
+                {
+                    if (DateTime.UtcNow >= _nextAttackTime)
+                    {
+                        var dir = Functions.DirectionFromPoint(current, closest.Location);
+                        await Client.AttackAsync(dir);
+                        _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
+                    }
                 }
             }
 
