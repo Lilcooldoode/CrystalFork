@@ -23,6 +23,9 @@ public static class PathFinder
         int width = map.Width;
         int height = map.Height;
 
+        if (start == end)
+            return new List<Point> { start };
+
         if (width == 0 || height == 0)
             return new List<Point>();
         var open = new PriorityQueue<Node, int>();

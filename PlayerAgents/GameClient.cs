@@ -14,11 +14,9 @@ public class GameClient
     private readonly Config _config;
     private TcpClient? _client;
     private NetworkStream? _stream;
-    private readonly ConcurrentQueue<Packet> _sendQueue = new();
     private long _pingTime;
     private readonly byte[] _buffer = new byte[1024 * 8];
     private byte[] _rawData = Array.Empty<byte>();
-    private int? _selectedIndex;
     private readonly Random _random = new();
     private MirClass? _playerClass;
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
@@ -117,7 +115,7 @@ public class GameClient
         {
             AccountID = _config.AccountID,
             Password = _config.Password,
-            BirthDate = DateTime.Today,
+            BirthDate = DateTime.UtcNow.Date,
             UserName = _config.AccountID,
             SecretQuestion = string.Empty,
             SecretAnswer = string.Empty,
@@ -326,7 +324,6 @@ public class GameClient
                 }
                 else
                 {
-                    _selectedIndex = match.Index;
                     Console.WriteLine($"Selected character '{match.Name}' (Index {match.Index})");
                     var start = new C.StartGame { CharacterIndex = match.Index };
                     _ = Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(start); });
@@ -334,7 +331,6 @@ public class GameClient
                 break;
             case S.NewCharacterSuccess ncs:
                 Console.WriteLine("Character created");
-                _selectedIndex = ncs.CharInfo.Index;
                 var startNew = new C.StartGame { CharacterIndex = ncs.CharInfo.Index };
                 _ = Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(startNew); });
                 break;

@@ -23,12 +23,6 @@ internal static class MapParser
         return 0;
     }
 
-    private static void Ensure(ref bool[,] cells, int width, int height)
-    {
-        if (cells.GetLength(0) == width && cells.GetLength(1) == height) return;
-        cells = new bool[width, height];
-    }
-
     public static bool[,] LoadV0(byte[] bytes)
     {
         int offset = 0;
