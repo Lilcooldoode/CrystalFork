@@ -1,12 +1,14 @@
 using ClientPackets;
 using Shared;
+using System.Collections.Generic;
 
 public class BaseAI
 {
     protected readonly GameClient Client;
     protected readonly Random Random = new();
 
-    protected static readonly EquipmentSlot[] OffensiveSlots =
+    // Using HashSet for faster Contains checks
+    protected static readonly HashSet<EquipmentSlot> OffensiveSlots = new()
     {
         EquipmentSlot.Weapon,
         EquipmentSlot.Necklace,
@@ -15,12 +17,7 @@ public class BaseAI
         EquipmentSlot.Stone
     };
 
-    protected static bool IsOffensiveSlot(EquipmentSlot slot)
-    {
-        foreach (var os in OffensiveSlots)
-            if (os == slot) return true;
-        return false;
-    }
+    protected static bool IsOffensiveSlot(EquipmentSlot slot) => OffensiveSlots.Contains(slot);
 
     public BaseAI(GameClient client)
     {

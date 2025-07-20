@@ -29,12 +29,12 @@ public class GameClient
     private UserItem[]? _inventory;
     private UserItem[]? _equipment;
 
-    public static readonly List<ItemInfo> ItemInfoList = new();
+    // Use a dictionary for faster lookups by item index
+    public static readonly Dictionary<int, ItemInfo> ItemInfoDict = new();
 
     private static void Bind(UserItem item)
     {
-        var info = ItemInfoList.Find(i => i.Index == item.ItemIndex);
-        if (info != null)
+        if (ItemInfoDict.TryGetValue(item.ItemIndex, out var info))
         {
             item.Info = info;
             for (int i = 0; i < item.Slots.Length; i++)
@@ -366,11 +366,8 @@ public class GameClient
                 _timeOfDay = tod.Lights;
                 break;
             case S.NewItemInfo nii:
-                int idx = ItemInfoList.FindIndex(i => i.Index == nii.Info.Index);
-                if (idx >= 0)
-                    ItemInfoList[idx] = nii.Info;
-                else
-                    ItemInfoList.Add(nii.Info);
+                // Replace or add the item info in the dictionary
+                ItemInfoDict[nii.Info.Index] = nii.Info;
                 break;
             case S.GainedItem gi:
                 Bind(gi.Item);
@@ -420,7 +417,7 @@ public class GameClient
             case S.DeleteItem di:
                 if (_inventory != null)
                 {
-                    idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == di.UniqueID);
+                    int idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == di.UniqueID);
                     if (idx >= 0)
                     {
                         var it = _inventory[idx];
@@ -439,12 +436,12 @@ public class GameClient
                 Bind(newItem);
                 if (_inventory != null)
                 {
-                    idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == newItem.UniqueID);
+                    int idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == newItem.UniqueID);
                     if (idx >= 0) _inventory[idx] = newItem;
                 }
                 if (_equipment != null)
                 {
-                    idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == newItem.UniqueID);
+                    int idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == newItem.UniqueID);
                     if (idx >= 0) _equipment[idx] = newItem;
                 }
                 break;
