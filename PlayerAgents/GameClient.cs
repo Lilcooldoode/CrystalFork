@@ -145,15 +145,6 @@ public class GameClient
         await SendAsync(equip);
     }
 
-    public int GetItemScore(UserItem item)
-    {
-        int score = 0;
-        if (item.Info != null)
-            score += item.Info.Stats.Count;
-        if (item.AddedStats != null)
-            score += item.AddedStats.Count;
-        return score;
-    }
 
     public bool CanEquipItem(UserItem item, EquipmentSlot slot)
     {
