@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.Sockets;
 using C = ClientPackets;
 using S = ServerPackets;
+using Shared;
 
 public class GameClient
 {
@@ -13,6 +14,11 @@ public class GameClient
     private byte[] _rawData = Array.Empty<byte>();
     private int? _selectedIndex;
     private readonly Random _random = new();
+    private MirClass? _playerClass;
+    private readonly TaskCompletionSource<MirClass> _classTcs = new();
+
+    public MirClass? PlayerClass => _playerClass;
+    public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
 
     public GameClient(Config config)
     {
@@ -78,17 +84,11 @@ public class GameClient
         await SendAsync(chr);
     }
 
-    public async Task RunAsync()
+    public async Task WalkAsync(MirDirection direction)
     {
         if (_stream == null) return;
-        var rnd = new Random();
-        while (true)
-        {
-            var dir = (MirDirection)rnd.Next(0, 8);
-            var walk = new C.Walk { Direction = dir };
-            await SendAsync(walk);
-            await Task.Delay(1000);
-        }
+        var walk = new C.Walk { Direction = direction };
+        await SendAsync(walk);
     }
 
     private async Task SendAsync(Packet p)
@@ -196,6 +196,11 @@ public class GameClient
                 break;
             case S.StartGameDelay delay:
                 Console.WriteLine($"StartGame delayed for {delay.Milliseconds} ms");
+                break;
+            case S.UserInformation info:
+                _playerClass = info.Class;
+                Console.WriteLine($"User class: {_playerClass}");
+                _classTcs.TrySetResult(info.Class);
                 break;
             default:
                 Console.WriteLine($"Received packet {p.GetType().Name}");

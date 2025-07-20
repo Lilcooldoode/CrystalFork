@@ -75,7 +75,19 @@ internal class Program
             var client = new GameClient(config);
             await client.ConnectAsync();
             await client.LoginAsync();
-            await client.RunAsync();
+
+            var playerClass = await client.WaitForClassAsync();
+            BaseAI ai = playerClass switch
+            {
+                MirClass.Warrior => new WarriorAI(client),
+                MirClass.Wizard => new WizardAI(client),
+                MirClass.Taoist => new TaoistAI(client),
+                MirClass.Assassin => new AssassinAI(client),
+                MirClass.Archer => new ArcherAI(client),
+                _ => new BaseAI(client)
+            };
+
+            await ai.RunAsync();
         }
         catch (Exception ex)
         {
