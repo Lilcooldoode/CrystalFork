@@ -176,7 +176,16 @@ public class BaseAI
                     List<Point> path = new();
                     try
                     {
-                        path = await PlayerAgents.Map.PathFinder.FindPathAsync(map, current, closest.Location);
+                        var obstacles = new HashSet<Point>();
+                        foreach (var obj in Client.TrackedObjects.Values)
+                        {
+                            if (obj.Id == closest.Id) continue;
+                            if (obj.Id == Client.ObjectId) continue;
+                            if (obj.Dead) continue;
+                            if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
+                                obstacles.Add(obj.Location);
+                        }
+                        path = await PlayerAgents.Map.PathFinder.FindPathAsync(map, current, closest.Location, obstacles);
                     }
                     catch
                     {

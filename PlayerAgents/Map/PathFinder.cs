@@ -13,12 +13,12 @@ public static class PathFinder
         public int F;
     }
 
-    public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end)
+    public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null)
     {
-        return await Task.Run(() => FindPath(map, start, end));
+        return await Task.Run(() => FindPath(map, start, end, obstacles));
     }
 
-    private static List<Point> FindPath(MapData map, Point start, Point end)
+    private static List<Point> FindPath(MapData map, Point start, Point end, ISet<Point>? obstacles)
     {
         int width = map.Width;
         int height = map.Height;
@@ -54,6 +54,7 @@ public static class PathFinder
             {
                 var neighbor = new Point(current.X + dir.X, current.Y + dir.Y);
                 if (!map.IsWalkable(neighbor.X, neighbor.Y)) continue;
+                if (obstacles != null && obstacles.Contains(neighbor) && neighbor != end && neighbor != start) continue;
                 int tentative = gScore[current] + ((dir.X == 0 || dir.Y == 0) ? 10 : 14);
                 if (gScore.TryGetValue(neighbor, out var g) && tentative >= g) continue;
                 cameFrom[neighbor] = current;

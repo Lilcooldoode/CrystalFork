@@ -80,6 +80,7 @@ public class GameClient
     public bool IsMapLoaded => _mapData != null && _mapData.Width > 0 && _mapData.Height > 0;
     public Point CurrentLocation => _currentLocation;
     public long PingTime => _pingTime;
+    public uint ObjectId => _objectId;
 
     public GameClient(Config config)
     {
@@ -503,9 +504,9 @@ public class GameClient
                     }
                     _dead = false;
                 }
-                else if (_trackedObjects.TryGetValue(orv.ObjectID, out var objR))
+                else if (_trackedObjects.TryGetValue(orv.ObjectID, out var objRev))
                 {
-                    objR.Dead = false;
+                    objRev.Dead = false;
                 }
                 break;
             case S.NewItemInfo nii:
