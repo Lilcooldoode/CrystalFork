@@ -11,7 +11,7 @@ public class BaseAI
         Client = client;
     }
 
-    protected virtual int WalkDelay => 1000;
+    protected virtual int WalkDelay => 600;
 
     public virtual async Task RunAsync()
     {

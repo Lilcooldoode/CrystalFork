@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net.Sockets;
+using System.Drawing;
 using C = ClientPackets;
 using S = ServerPackets;
 using Shared;
@@ -16,6 +17,8 @@ public class GameClient
     private readonly Random _random = new();
     private MirClass? _playerClass;
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
+    private Point _currentLocation = Point.Empty;
+    private string _playerName = string.Empty;
 
     public MirClass? PlayerClass => _playerClass;
     public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
@@ -39,6 +42,7 @@ public class GameClient
     public async Task LoginAsync()
     {
         if (_stream == null) return;
+        Console.WriteLine("Logging in...");
         // send client version (empty hash for simplicity)
         var ver = new C.ClientVersion { VersionHash = Array.Empty<byte>() };
         await RandomStartupDelayAsync();
@@ -87,6 +91,8 @@ public class GameClient
     public async Task WalkAsync(MirDirection direction)
     {
         if (_stream == null) return;
+        var target = Functions.PointMove(_currentLocation, direction, 1);
+        Console.WriteLine($"I am walking to {target.X}, {target.Y}");
         var walk = new C.Walk { Direction = direction };
         await SendAsync(walk);
     }
@@ -199,11 +205,17 @@ public class GameClient
                 break;
             case S.UserInformation info:
                 _playerClass = info.Class;
-                Console.WriteLine($"User class: {_playerClass}");
+                _playerName = info.Name;
+                _currentLocation = info.Location;
+                Console.WriteLine($"Logged in as {_playerName}");
+                Console.WriteLine($"I am currently at location {_currentLocation.X}, {_currentLocation.Y}");
                 _classTcs.TrySetResult(info.Class);
                 break;
+            case S.UserLocation loc:
+                _currentLocation = loc.Location;
+                break;
             default:
-                Console.WriteLine($"Received packet {p.GetType().Name}");
+                // ignore unhandled packets
                 break;
         }
     }
