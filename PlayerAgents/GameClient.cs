@@ -33,6 +33,9 @@ public class GameClient
     private UserItem[]? _inventory;
     private UserItem[]? _equipment;
 
+    // store information on nearby objects
+    private readonly Dictionary<uint, TrackedObject> _trackedObjects = new();
+
     // Use a dictionary for faster lookups by item index
     public static readonly Dictionary<int, ItemInfo> ItemInfoDict = new();
 
@@ -66,6 +69,7 @@ public class GameClient
     public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
     public LightSetting TimeOfDay => _timeOfDay;
     public MapData? CurrentMap => _mapData;
+    public IReadOnlyDictionary<uint, TrackedObject> TrackedObjects => _trackedObjects;
 
     public GameClient(Config config)
     {
@@ -378,6 +382,45 @@ public class GameClient
                 break;
             case S.TimeOfDay tod:
                 _timeOfDay = tod.Lights;
+                break;
+            case S.ObjectPlayer op:
+                _trackedObjects[op.ObjectID] = new TrackedObject(op.ObjectID, ObjectType.Player, op.Name, op.Location, op.Direction);
+                break;
+            case S.ObjectMonster om:
+                _trackedObjects[om.ObjectID] = new TrackedObject(om.ObjectID, ObjectType.Monster, om.Name, om.Location, om.Direction);
+                break;
+            case S.ObjectNPC on:
+                _trackedObjects[on.ObjectID] = new TrackedObject(on.ObjectID, ObjectType.Merchant, on.Name, on.Location, on.Direction);
+                break;
+            case S.ObjectItem oi:
+                _trackedObjects[oi.ObjectID] = new TrackedObject(oi.ObjectID, ObjectType.Item, oi.Name, oi.Location, MirDirection.Up);
+                break;
+            case S.ObjectGold og:
+                _trackedObjects[og.ObjectID] = new TrackedObject(og.ObjectID, ObjectType.Item, "Gold", og.Location, MirDirection.Up);
+                break;
+            case S.ObjectTurn ot:
+                if (_trackedObjects.TryGetValue(ot.ObjectID, out var objT))
+                {
+                    objT.Location = ot.Location;
+                    objT.Direction = ot.Direction;
+                }
+                break;
+            case S.ObjectWalk ow:
+                if (_trackedObjects.TryGetValue(ow.ObjectID, out var objW))
+                {
+                    objW.Location = ow.Location;
+                    objW.Direction = ow.Direction;
+                }
+                break;
+            case S.ObjectRun oru:
+                if (_trackedObjects.TryGetValue(oru.ObjectID, out var objR))
+                {
+                    objR.Location = oru.Location;
+                    objR.Direction = oru.Direction;
+                }
+                break;
+            case S.ObjectRemove ore:
+                _trackedObjects.Remove(ore.ObjectID);
                 break;
             case S.NewItemInfo nii:
                 // Replace or add the item info in the dictionary
