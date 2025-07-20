@@ -196,16 +196,30 @@ public class BaseAI
                         // ignore pathing errors
                     }
 
-                    if (path.Count > 1)
+                    if (path.Count > 2)
                     {
-                        var next = path[1];
-                        var dir = Functions.DirectionFromPoint(current, next);
-                        await Client.WalkAsync(dir);
+                        var first = path[1];
+                        var dir = Functions.DirectionFromPoint(current, first);
+                        if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
+                        {
+                            await Client.RunAsync(dir);
+                        }
+                        else if (Client.CanWalk(dir))
+                        {
+                            await Client.WalkAsync(dir);
+                        }
+                    }
+                    else if (path.Count > 1)
+                    {
+                        var dir = Functions.DirectionFromPoint(current, path[1]);
+                        if (Client.CanWalk(dir))
+                            await Client.WalkAsync(dir);
                     }
                     else if (path.Count == 1)
                     {
                         var dir = Functions.DirectionFromPoint(current, closest.Location);
-                        await Client.WalkAsync(dir);
+                        if (Client.CanWalk(dir))
+                            await Client.WalkAsync(dir);
                     }
 
                 }

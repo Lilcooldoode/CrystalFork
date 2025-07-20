@@ -39,6 +39,9 @@ public class GameClient
 
     private bool _dead;
 
+    private DateTime _lastMoveTime = DateTime.MinValue;
+    private bool _canRun;
+
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
 
@@ -96,6 +99,7 @@ public class GameClient
         await _client.ConnectAsync(_config.ServerIP, _config.ServerPort);
         _stream = _client.GetStream();
         Console.WriteLine("Connected to server");
+        _canRun = false;
         _ = Task.Run(ReceiveLoop);
         _ = Task.Run(KeepAliveLoop);
     }
@@ -156,6 +160,55 @@ public class GameClient
         Console.WriteLine($"I am walking to {target.X}, {target.Y}");
         var walk = new C.Walk { Direction = direction };
         await SendAsync(walk);
+        _lastMoveTime = DateTime.UtcNow;
+        _canRun = true;
+    }
+
+    public async Task RunAsync(MirDirection direction)
+    {
+        if (_stream == null) return;
+        var target = Functions.PointMove(_currentLocation, direction, 2);
+        Console.WriteLine($"I am running to {target.X}, {target.Y}");
+        var run = new C.Run { Direction = direction };
+        await SendAsync(run);
+        _lastMoveTime = DateTime.UtcNow;
+    }
+
+    private bool IsCellBlocked(Point p)
+    {
+        if (_mapData == null || !_mapData.IsWalkable(p.X, p.Y))
+            return true;
+
+        foreach (var obj in _trackedObjects.Values)
+        {
+            if (obj.Id == _objectId || obj.Dead) continue;
+            if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
+            {
+                if (obj.Location == p)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    public bool CanWalk(MirDirection direction)
+    {
+        var target = Functions.PointMove(_currentLocation, direction, 1);
+        return !IsCellBlocked(target);
+    }
+
+    public bool CanRun(MirDirection direction)
+    {
+        if (!_canRun) return false;
+        if (DateTime.UtcNow - _lastMoveTime > TimeSpan.FromMilliseconds(900)) return false;
+
+        var first = Functions.PointMove(_currentLocation, direction, 1);
+        var second = Functions.PointMove(_currentLocation, direction, 2);
+
+        if (IsCellBlocked(first) || IsCellBlocked(second)) return false;
+
+        return true;
     }
 
     public async Task AttackAsync(MirDirection direction)
@@ -436,12 +489,23 @@ public class GameClient
                     objW.Location = ow.Location;
                     objW.Direction = ow.Direction;
                 }
+                if (ow.ObjectID == _objectId)
+                {
+                    _currentLocation = ow.Location;
+                    _lastMoveTime = DateTime.UtcNow;
+                    _canRun = true;
+                }
                 break;
             case S.ObjectRun oru:
                 if (_trackedObjects.TryGetValue(oru.ObjectID, out var objR))
                 {
                     objR.Location = oru.Location;
                     objR.Direction = oru.Direction;
+                }
+                if (oru.ObjectID == _objectId)
+                {
+                    _currentLocation = oru.Location;
+                    _lastMoveTime = DateTime.UtcNow;
                 }
                 break;
             case S.Struck st:
