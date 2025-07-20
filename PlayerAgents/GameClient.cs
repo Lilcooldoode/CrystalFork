@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Drawing;
+using System.Collections.Generic;
+using System.Linq;
 using C = ClientPackets;
 using S = ServerPackets;
 using Shared;
@@ -19,6 +21,40 @@ public class GameClient
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
     private string _playerName = string.Empty;
+
+    private MirGender _gender;
+    private ushort _level;
+    private UserItem[]? _inventory;
+    private UserItem[]? _equipment;
+
+    public static readonly List<ItemInfo> ItemInfoList = new();
+
+    private static void Bind(UserItem item)
+    {
+        var info = ItemInfoList.Find(i => i.Index == item.ItemIndex);
+        if (info != null)
+        {
+            item.Info = info;
+            for (int i = 0; i < item.Slots.Length; i++)
+            {
+                if (item.Slots[i] != null)
+                    Bind(item.Slots[i]!);
+            }
+        }
+    }
+
+    private static void BindAll(UserItem[]? items)
+    {
+        if (items == null) return;
+        for (int i = 0; i < items.Length; i++)
+        {
+            if (items[i] != null)
+                Bind(items[i]!);
+        }
+    }
+
+    public IReadOnlyList<UserItem>? Inventory => _inventory;
+    public IReadOnlyList<UserItem>? Equipment => _equipment;
 
     public MirClass? PlayerClass => _playerClass;
     public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
@@ -95,6 +131,90 @@ public class GameClient
         Console.WriteLine($"I am walking to {target.X}, {target.Y}");
         var walk = new C.Walk { Direction = direction };
         await SendAsync(walk);
+    }
+
+    public async Task EquipItemAsync(UserItem item, EquipmentSlot slot)
+    {
+        if (_stream == null) return;
+        var equip = new C.EquipItem
+        {
+            Grid = MirGridType.Inventory,
+            UniqueID = item.UniqueID,
+            To = (int)slot
+        };
+        await SendAsync(equip);
+    }
+
+    public int GetItemScore(UserItem item)
+    {
+        int score = 0;
+        if (item.Info != null)
+            score += item.Info.Stats.Count;
+        if (item.AddedStats != null)
+            score += item.AddedStats.Count;
+        return score;
+    }
+
+    public bool CanEquipItem(UserItem item, EquipmentSlot slot)
+    {
+        if (_playerClass == null) return false;
+        if (item.Info == null) return false;
+
+        if (!IsItemForSlot(item.Info, slot)) return false;
+
+        if (item.Info.RequiredGender != RequiredGender.None)
+        {
+            RequiredGender genderFlag = _gender == MirGender.Male ? RequiredGender.Male : RequiredGender.Female;
+            if (!item.Info.RequiredGender.HasFlag(genderFlag))
+                return false;
+        }
+
+        RequiredClass playerClassFlag = _playerClass switch
+        {
+            MirClass.Warrior => RequiredClass.Warrior,
+            MirClass.Wizard => RequiredClass.Wizard,
+            MirClass.Taoist => RequiredClass.Taoist,
+            MirClass.Assassin => RequiredClass.Assassin,
+            MirClass.Archer => RequiredClass.Archer,
+            _ => RequiredClass.None
+        };
+
+        if (!item.Info.RequiredClass.HasFlag(playerClassFlag))
+            return false;
+
+        switch (item.Info.RequiredType)
+        {
+            case RequiredType.Level:
+                if (_level < item.Info.RequiredAmount) return false;
+                break;
+            case RequiredType.MaxLevel:
+                if (_level > item.Info.RequiredAmount) return false;
+                break;
+        }
+
+        return true;
+    }
+
+    private static bool IsItemForSlot(ItemInfo info, EquipmentSlot slot)
+    {
+        return slot switch
+        {
+            EquipmentSlot.Weapon => info.Type == ItemType.Weapon,
+            EquipmentSlot.Armour => info.Type == ItemType.Armour,
+            EquipmentSlot.Helmet => info.Type == ItemType.Helmet,
+            EquipmentSlot.Torch => info.Type == ItemType.Torch,
+            EquipmentSlot.Necklace => info.Type == ItemType.Necklace,
+            EquipmentSlot.BraceletL => info.Type == ItemType.Bracelet,
+            EquipmentSlot.BraceletR => info.Type == ItemType.Bracelet,
+            EquipmentSlot.RingL => info.Type == ItemType.Ring,
+            EquipmentSlot.RingR => info.Type == ItemType.Ring,
+            EquipmentSlot.Amulet => info.Type == ItemType.Amulet,
+            EquipmentSlot.Belt => info.Type == ItemType.Belt,
+            EquipmentSlot.Boots => info.Type == ItemType.Boots,
+            EquipmentSlot.Stone => info.Type == ItemType.Stone,
+            EquipmentSlot.Mount => info.Type == ItemType.Mount,
+            _ => false
+        };
     }
 
     private async Task SendAsync(Packet p)
@@ -207,12 +327,101 @@ public class GameClient
                 _playerClass = info.Class;
                 _playerName = info.Name;
                 _currentLocation = info.Location;
+                _gender = info.Gender;
+                _level = info.Level;
+                _inventory = info.Inventory;
+                _equipment = info.Equipment;
+                BindAll(_inventory);
+                BindAll(_equipment);
                 Console.WriteLine($"Logged in as {_playerName}");
                 Console.WriteLine($"I am currently at location {_currentLocation.X}, {_currentLocation.Y}");
                 _classTcs.TrySetResult(info.Class);
                 break;
             case S.UserLocation loc:
                 _currentLocation = loc.Location;
+                break;
+            case S.NewItemInfo nii:
+                int idx = ItemInfoList.FindIndex(i => i.Index == nii.Info.Index);
+                if (idx >= 0)
+                    ItemInfoList[idx] = nii.Info;
+                else
+                    ItemInfoList.Add(nii.Info);
+                break;
+            case S.GainedItem gi:
+                Bind(gi.Item);
+                if (_inventory != null)
+                {
+                    for (int i = 0; i < _inventory.Length; i++)
+                    {
+                        if (_inventory[i] == null)
+                        {
+                            _inventory[i] = gi.Item;
+                            break;
+                        }
+                    }
+                }
+                break;
+            case S.MoveItem mi:
+                if (mi.Grid == MirGridType.Inventory && _inventory != null && mi.Success && mi.From >= 0 && mi.To >= 0 && mi.From < _inventory.Length && mi.To < _inventory.Length)
+                {
+                    var tmp = _inventory[mi.To];
+                    _inventory[mi.To] = _inventory[mi.From];
+                    _inventory[mi.From] = tmp;
+                }
+                break;
+            case S.EquipItem ei:
+                if (ei.Grid == MirGridType.Inventory && ei.Success && _inventory != null && _equipment != null)
+                {
+                    int invIndex = Array.FindIndex(_inventory, x => x != null && x.UniqueID == ei.UniqueID);
+                    if (invIndex >= 0 && ei.To >= 0 && ei.To < _equipment.Length)
+                    {
+                        var temp = _equipment[ei.To];
+                        _equipment[ei.To] = _inventory[invIndex];
+                        _inventory[invIndex] = temp;
+                    }
+                }
+                break;
+            case S.RemoveItem ri:
+                if (ri.Grid == MirGridType.Inventory && ri.Success && _inventory != null && _equipment != null)
+                {
+                    int eqIndex = Array.FindIndex(_equipment, x => x != null && x.UniqueID == ri.UniqueID);
+                    if (eqIndex >= 0 && ri.To >= 0 && ri.To < _inventory.Length)
+                    {
+                        _inventory[ri.To] = _equipment[eqIndex];
+                        _equipment[eqIndex] = null;
+                    }
+                }
+                break;
+            case S.DeleteItem di:
+                if (_inventory != null)
+                {
+                    idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == di.UniqueID);
+                    if (idx >= 0)
+                    {
+                        var it = _inventory[idx];
+                        if (it != null)
+                        {
+                            if (it.Count > di.Count)
+                                it.Count -= di.Count;
+                            else
+                                _inventory[idx] = null;
+                        }
+                    }
+                }
+                break;
+            case S.RefreshItem rfi:
+                var newItem = rfi.Item;
+                Bind(newItem);
+                if (_inventory != null)
+                {
+                    idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == newItem.UniqueID);
+                    if (idx >= 0) _inventory[idx] = newItem;
+                }
+                if (_equipment != null)
+                {
+                    idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == newItem.UniqueID);
+                    if (idx >= 0) _equipment[idx] = newItem;
+                }
                 break;
             default:
                 // ignore unhandled packets
