@@ -228,6 +228,7 @@ internal static class MapParser
         int offset = 4;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
+
         bool[,] walk = new bool[width, height];
         offset = 8;
         for (int x = 0; x < width; x++)
@@ -237,9 +238,11 @@ internal static class MapParser
                 bool walkable = true;
                 offset += 2;
                 if ((BitConverter.ToInt32(bytes, offset) & 0x20000000) != 0) walkable = false;
-                offset += 12;
+                offset += 10;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
-                offset += 14;
+                offset += 2;
+                offset += 11;
+                offset += 1;
                 walk[x, y] = walkable;
             }
         }

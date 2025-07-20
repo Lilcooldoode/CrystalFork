@@ -1,11 +1,13 @@
 using ClientPackets;
 using Shared;
 using System.Collections.Generic;
+using System.Drawing;
 
 public class BaseAI
 {
     protected readonly GameClient Client;
     protected readonly Random Random = new();
+    private TrackedObject? _currentTarget;
 
     // Using HashSet for faster Contains checks
     protected static readonly HashSet<EquipmentSlot> OffensiveSlots = new()
@@ -117,8 +119,64 @@ public class BaseAI
                 _nextEquipCheck = DateTime.UtcNow + EquipCheckInterval;
             }
 
-            var dir = (MirDirection)Random.Next(0, 8);
-            await Client.WalkAsync(dir);
+            var map = Client.CurrentMap;
+            if (map == null || !Client.IsMapLoaded)
+            {
+                await Task.Delay(WalkDelay);
+                continue;
+            }
+
+            var current = Client.CurrentLocation;
+
+            TrackedObject? closest = null;
+            int bestDist = int.MaxValue;
+
+            foreach (var obj in Client.TrackedObjects.Values)
+            {
+                if (obj.Type != ObjectType.Monster) continue;
+                int dist = Functions.MaxDistance(current, obj.Location);
+                if (dist < bestDist)
+                {
+                    bestDist = dist;
+                    closest = obj;
+                }
+            }
+
+            if (closest != null)
+            {
+                if (_currentTarget?.Id != closest.Id)
+                {
+                    Console.WriteLine($"I have targeted {closest.Name} at {closest.Location.X}, {closest.Location.Y}");
+                    _currentTarget = closest;
+                }
+
+                if (bestDist > 1)
+                {
+                    List<Point> path = new();
+                    try
+                    {
+                        path = await PlayerAgents.Map.PathFinder.FindPathAsync(map, current, closest.Location);
+                    }
+                    catch
+                    {
+                        // ignore pathing errors
+                    }
+
+                    if (path.Count > 1)
+                    {
+                        var next = path[1];
+                        var dir = Functions.DirectionFromPoint(current, next);
+                        await Client.WalkAsync(dir);
+                    }
+                    else if (path.Count == 1)
+                    {
+                        var dir = Functions.DirectionFromPoint(current, closest.Location);
+                        await Client.WalkAsync(dir);
+                    }
+
+                }
+            }
+
             await Task.Delay(WalkDelay);
         }
     }

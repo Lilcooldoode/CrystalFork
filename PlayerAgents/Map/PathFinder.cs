@@ -22,6 +22,9 @@ public static class PathFinder
     {
         int width = map.Width;
         int height = map.Height;
+
+        if (width == 0 || height == 0)
+            return new List<Point>();
         var open = new PriorityQueue<Node, int>();
         var cameFrom = new Dictionary<Point, Point>();
         var gScore = new Dictionary<Point, int>();
@@ -33,11 +36,16 @@ public static class PathFinder
             new Point(1,-1), new Point(1,1), new Point(-1,1), new Point(-1,-1)
         };
 
+        int steps = 0;
+        const int maxSteps = 20000;
         while (open.Count > 0)
         {
             var current = open.Dequeue().Point;
             if (current == end)
                 return ReconstructPath(cameFrom, current);
+
+            if (++steps > maxSteps)
+                break;
 
             foreach (var dir in directions)
             {

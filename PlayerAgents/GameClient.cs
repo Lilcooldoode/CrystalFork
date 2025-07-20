@@ -15,6 +15,7 @@ public class GameClient
     private TcpClient? _client;
     private NetworkStream? _stream;
     private readonly ConcurrentQueue<Packet> _sendQueue = new();
+    private long _pingTime;
     private readonly byte[] _buffer = new byte[1024 * 8];
     private byte[] _rawData = Array.Empty<byte>();
     private int? _selectedIndex;
@@ -34,7 +35,7 @@ public class GameClient
     private UserItem[]? _equipment;
 
     // store information on nearby objects
-    private readonly Dictionary<uint, TrackedObject> _trackedObjects = new();
+    private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
 
     // Use a dictionary for faster lookups by item index
     public static readonly Dictionary<int, ItemInfo> ItemInfoDict = new();
@@ -70,6 +71,9 @@ public class GameClient
     public LightSetting TimeOfDay => _timeOfDay;
     public MapData? CurrentMap => _mapData;
     public IReadOnlyDictionary<uint, TrackedObject> TrackedObjects => _trackedObjects;
+    public bool IsMapLoaded => _mapData != null && _mapData.Width > 0 && _mapData.Height > 0;
+    public Point CurrentLocation => _currentLocation;
+    public long PingTime => _pingTime;
 
     public GameClient(Config config)
     {
@@ -85,6 +89,7 @@ public class GameClient
         _stream = _client.GetStream();
         Console.WriteLine("Connected to server");
         _ = Task.Run(ReceiveLoop);
+        _ = Task.Run(KeepAliveLoop);
     }
 
     public async Task LoginAsync()
@@ -420,7 +425,7 @@ public class GameClient
                 }
                 break;
             case S.ObjectRemove ore:
-                _trackedObjects.Remove(ore.ObjectID);
+                _trackedObjects.TryRemove(ore.ObjectID, out _);
                 break;
             case S.NewItemInfo nii:
                 // Replace or add the item info in the dictionary
@@ -502,6 +507,9 @@ public class GameClient
                     if (idx >= 0) _equipment[idx] = newItem;
                 }
                 break;
+            case S.KeepAlive keep:
+                _pingTime = Environment.TickCount64 - keep.Time;
+                break;
             default:
                 // ignore unhandled packets
                 break;
@@ -512,5 +520,21 @@ public class GameClient
     {
         if (string.IsNullOrEmpty(_currentMapFile)) return;
         _mapData = await MapManager.GetMapAsync(_currentMapFile);
+    }
+
+    private async Task KeepAliveLoop()
+    {
+        while (_stream != null)
+        {
+            await Task.Delay(5000);
+            try
+            {
+                await SendAsync(new C.KeepAlive { Time = Environment.TickCount64 });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"KeepAlive error: {ex.Message}");
+            }
+        }
     }
 }

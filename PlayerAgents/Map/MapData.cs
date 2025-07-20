@@ -1,3 +1,4 @@
+using System;
 using System.Drawing;
 using System.IO;
 using System.Threading;
@@ -73,9 +74,9 @@ public class MapData
                 _lock.ExitWriteLock();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            Console.WriteLine($"Error loading map {_path}: {ex}");
         }
     }
 
