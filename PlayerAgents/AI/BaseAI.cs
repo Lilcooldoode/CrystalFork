@@ -19,6 +19,9 @@ public class BaseAI
         EquipmentSlot.Stone
     };
 
+    // Monsters with these AI values are ignored when selecting a target
+    protected static readonly HashSet<byte> IgnoredAIs = new() { 6, 58, 57, 56, 64 };
+
     protected static bool IsOffensiveSlot(EquipmentSlot slot) => OffensiveSlots.Contains(slot);
 
     public BaseAI(GameClient client)
@@ -134,6 +137,8 @@ public class BaseAI
             foreach (var obj in Client.TrackedObjects.Values)
             {
                 if (obj.Type != ObjectType.Monster) continue;
+                if (obj.Dead) continue;
+                if (IgnoredAIs.Contains(obj.AI)) continue;
                 int dist = Functions.MaxDistance(current, obj.Location);
                 if (dist < bestDist)
                 {

@@ -388,7 +388,7 @@ public class GameClient
                 _trackedObjects[op.ObjectID] = new TrackedObject(op.ObjectID, ObjectType.Player, op.Name, op.Location, op.Direction);
                 break;
             case S.ObjectMonster om:
-                _trackedObjects[om.ObjectID] = new TrackedObject(om.ObjectID, ObjectType.Monster, om.Name, om.Location, om.Direction);
+                _trackedObjects[om.ObjectID] = new TrackedObject(om.ObjectID, ObjectType.Monster, om.Name, om.Location, om.Direction, om.AI, om.Dead);
                 break;
             case S.ObjectNPC on:
                 _trackedObjects[on.ObjectID] = new TrackedObject(on.ObjectID, ObjectType.Merchant, on.Name, on.Location, on.Direction);
@@ -418,6 +418,12 @@ public class GameClient
                 {
                     objR.Location = oru.Location;
                     objR.Direction = oru.Direction;
+                }
+                break;
+            case S.ObjectDied od:
+                if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
+                {
+                    objD.Dead = true;
                 }
                 break;
             case S.ObjectRemove ore:
