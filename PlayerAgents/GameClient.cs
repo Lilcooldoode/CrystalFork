@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Drawing;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using C = ClientPackets;
 using S = ServerPackets;
 using Shared;
+using PlayerAgents.Map;
 
 public class GameClient
 {
@@ -21,6 +23,8 @@ public class GameClient
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
     private string _playerName = string.Empty;
+    private string _currentMapFile = string.Empty;
+    private PlayerAgents.Map.MapData? _mapData;
 
     private LightSetting _timeOfDay = LightSetting.Normal;
 
@@ -61,6 +65,7 @@ public class GameClient
     public MirClass? PlayerClass => _playerClass;
     public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
     public LightSetting TimeOfDay => _timeOfDay;
+    public MapData? CurrentMap => _mapData;
 
     public GameClient(Config config)
     {
@@ -345,6 +350,15 @@ public class GameClient
             case S.StartGameDelay delay:
                 Console.WriteLine($"StartGame delayed for {delay.Milliseconds} ms");
                 break;
+            case S.MapInformation mi:
+                _currentMapFile = Path.Combine(MapManager.MapDirectory, mi.FileName + ".map");
+                _ = LoadMapAsync();
+                break;
+            case S.MapChanged mc:
+                _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
+                _currentLocation = mc.Location;
+                _ = LoadMapAsync();
+                break;
             case S.UserInformation info:
                 _playerClass = info.Class;
                 _playerName = info.Name;
@@ -449,5 +463,11 @@ public class GameClient
                 // ignore unhandled packets
                 break;
         }
+    }
+
+    private async Task LoadMapAsync()
+    {
+        if (string.IsNullOrEmpty(_currentMapFile)) return;
+        _mapData = await MapManager.GetMapAsync(_currentMapFile);
     }
 }
