@@ -36,6 +36,8 @@ public class GameClient
     private uint? _lastAttackTarget;
     private uint? _lastStruckAttacker;
 
+    private bool _dead;
+
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
 
@@ -67,6 +69,8 @@ public class GameClient
 
     public IReadOnlyList<UserItem>? Inventory => _inventory;
     public IReadOnlyList<UserItem>? Equipment => _equipment;
+
+    public bool Dead => _dead;
 
     public MirClass? PlayerClass => _playerClass;
     public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
@@ -157,6 +161,12 @@ public class GameClient
         if (_stream == null) return;
         var attack = new C.Attack { Direction = direction, Spell = Spell.None };
         await SendAsync(attack);
+    }
+
+    public async Task TownReviveAsync()
+    {
+        if (_stream == null) return;
+        await SendAsync(new C.TownRevive());
     }
 
     public async Task EquipItemAsync(UserItem item, EquipmentSlot slot)
@@ -464,13 +474,39 @@ public class GameClient
                 }
                 break;
             case S.ObjectDied od:
-                if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
+                if (od.ObjectID == _objectId)
+                {
+                    Console.WriteLine("I have died.");
+                    _dead = true;
+                }
+                else if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
                 {
                     objD.Dead = true;
                 }
                 break;
             case S.ObjectRemove ore:
                 _trackedObjects.TryRemove(ore.ObjectID, out _);
+                break;
+            case S.Revived:
+                if (_dead)
+                {
+                    Console.WriteLine("I have been revived.");
+                }
+                _dead = false;
+                break;
+            case S.ObjectRevived orv:
+                if (orv.ObjectID == _objectId)
+                {
+                    if (_dead)
+                    {
+                        Console.WriteLine("I have been revived.");
+                    }
+                    _dead = false;
+                }
+                else if (_trackedObjects.TryGetValue(orv.ObjectID, out var objR))
+                {
+                    objR.Dead = false;
+                }
                 break;
             case S.NewItemInfo nii:
                 // Replace or add the item info in the dictionary

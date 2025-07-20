@@ -116,8 +116,22 @@ public class BaseAI
 
     public virtual async Task RunAsync()
     {
+        bool sentRevive = false;
         while (true)
         {
+            if (Client.Dead)
+            {
+                _currentTarget = null;
+                if (!sentRevive)
+                {
+                    await Client.TownReviveAsync();
+                    sentRevive = true;
+                }
+                await Task.Delay(WalkDelay);
+                if (!Client.Dead) sentRevive = false;
+                continue;
+            }
+
             if (DateTime.UtcNow >= _nextEquipCheck)
             {
                 await CheckEquipmentAsync();
