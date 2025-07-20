@@ -50,6 +50,7 @@ public class BaseAI
         for (int slot = 0; slot < equipment.Count; slot++)
         {
             var equipSlot = (EquipmentSlot)slot;
+            if (equipSlot == EquipmentSlot.Torch) continue;
             UserItem? current = equipment[slot];
             int bestScore = current != null ? GetItemScore(current, equipSlot) : -1;
             UserItem? bestItem = current;
@@ -72,6 +73,40 @@ public class BaseAI
                 if (bestItem.Info != null)
                     Console.WriteLine($"I have equipped {bestItem.Info.FriendlyName}");
             }
+        }
+
+        // handle torch based on time of day
+        var torchSlot = EquipmentSlot.Torch;
+        UserItem? currentTorch = equipment.Count > (int)torchSlot ? equipment[(int)torchSlot] : null;
+        if (Client.TimeOfDay == LightSetting.Night)
+        {
+            int bestScore = currentTorch != null ? GetItemScore(currentTorch, torchSlot) : -1;
+            UserItem? bestTorch = currentTorch;
+
+            foreach (var item in inventory)
+            {
+                if (item == null) continue;
+                if (!Client.CanEquipItem(item, torchSlot)) continue;
+                int score = GetItemScore(item, torchSlot);
+                if (bestTorch == null || score > bestScore)
+                {
+                    bestTorch = item;
+                    bestScore = score;
+                }
+            }
+
+            if (bestTorch != null && bestTorch != currentTorch)
+            {
+                await Client.EquipItemAsync(bestTorch, torchSlot);
+                if (bestTorch.Info != null)
+                    Console.WriteLine($"I have equipped {bestTorch.Info.FriendlyName}");
+            }
+        }
+        else if (currentTorch != null)
+        {
+            if (currentTorch.Info != null)
+                Console.WriteLine($"I have unequipped {currentTorch.Info.FriendlyName}");
+            await Client.UnequipItemAsync(torchSlot);
         }
     }
 

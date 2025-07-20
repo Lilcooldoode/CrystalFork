@@ -22,6 +22,8 @@ public class GameClient
     private Point _currentLocation = Point.Empty;
     private string _playerName = string.Empty;
 
+    private LightSetting _timeOfDay = LightSetting.Normal;
+
     private MirGender _gender;
     private ushort _level;
     private UserItem[]? _inventory;
@@ -58,6 +60,7 @@ public class GameClient
 
     public MirClass? PlayerClass => _playerClass;
     public Task<MirClass> WaitForClassAsync() => _classTcs.Task;
+    public LightSetting TimeOfDay => _timeOfDay;
 
     public GameClient(Config config)
     {
@@ -143,6 +146,34 @@ public class GameClient
             To = (int)slot
         };
         await SendAsync(equip);
+    }
+
+    private int FindFreeInventorySlot()
+    {
+        if (_inventory == null) return -1;
+        for (int i = 0; i < _inventory.Length; i++)
+        {
+            if (_inventory[i] == null) return i;
+        }
+        return -1;
+    }
+
+    public async Task UnequipItemAsync(EquipmentSlot slot)
+    {
+        if (_stream == null || _equipment == null) return;
+        var item = _equipment[(int)slot];
+        if (item == null) return;
+        int index = FindFreeInventorySlot();
+        if (index < 0) return;
+
+        var remove = new C.RemoveItem
+        {
+            Grid = MirGridType.Inventory,
+            UniqueID = item.UniqueID,
+            To = index
+        };
+
+        await SendAsync(remove);
     }
 
 
@@ -330,6 +361,9 @@ public class GameClient
                 break;
             case S.UserLocation loc:
                 _currentLocation = loc.Location;
+                break;
+            case S.TimeOfDay tod:
+                _timeOfDay = tod.Lights;
                 break;
             case S.NewItemInfo nii:
                 int idx = ItemInfoList.FindIndex(i => i.Index == nii.Info.Index);
