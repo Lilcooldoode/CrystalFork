@@ -12,11 +12,14 @@ public class GameClient
     private readonly byte[] _buffer = new byte[1024 * 8];
     private byte[] _rawData = Array.Empty<byte>();
     private int? _selectedIndex;
+    private readonly Random _random = new();
 
     public GameClient(Config config)
     {
         _config = config;
     }
+
+    private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));
 
     public async Task ConnectAsync()
     {
@@ -32,10 +35,12 @@ public class GameClient
         if (_stream == null) return;
         // send client version (empty hash for simplicity)
         var ver = new C.ClientVersion { VersionHash = Array.Empty<byte>() };
+        await RandomStartupDelayAsync();
         await SendAsync(ver);
 
         // send login details
         var login = new C.Login { AccountID = _config.AccountID, Password = _config.Password };
+        await RandomStartupDelayAsync();
         await SendAsync(login);
 
         // StartGame will be sent once LoginSuccess is received
@@ -55,6 +60,7 @@ public class GameClient
             SecretAnswer = string.Empty,
             EMailAddress = string.Empty
         };
+        await RandomStartupDelayAsync();
         await SendAsync(acc);
     }
 
@@ -65,9 +71,10 @@ public class GameClient
         var chr = new C.NewCharacter
         {
             Name = _config.CharacterName,
-            Gender = MirGender.Male,
-            Class = MirClass.Warrior
+            Gender = (MirGender)_random.Next(Enum.GetValues<MirGender>().Length),
+            Class = (MirClass)_random.Next(Enum.GetValues<MirClass>().Length)
         };
+        await RandomStartupDelayAsync();
         await SendAsync(chr);
     }
 
@@ -160,14 +167,14 @@ public class GameClient
                     _selectedIndex = match.Index;
                     Console.WriteLine($"Selected character '{match.Name}' (Index {match.Index})");
                     var start = new C.StartGame { CharacterIndex = match.Index };
-                    _ = SendAsync(start);
+                    _ = Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(start); });
                 }
                 break;
             case S.NewCharacterSuccess ncs:
                 Console.WriteLine("Character created");
                 _selectedIndex = ncs.CharInfo.Index;
                 var startNew = new C.StartGame { CharacterIndex = ncs.CharInfo.Index };
-                _ = SendAsync(startNew);
+                _ = Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(startNew); });
                 break;
             case S.NewCharacter nc:
                 Console.WriteLine($"Character creation failed: {nc.Result}");
