@@ -3,12 +3,14 @@ using Shared;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Threading.Tasks;
 
 public class BaseAI
 {
     protected readonly GameClient Client;
     protected readonly Random Random = new();
     private TrackedObject? _currentTarget;
+    private Point? _searchDestination;
 
     // Using HashSet for faster Contains checks
     protected static readonly HashSet<EquipmentSlot> OffensiveSlots = new()
@@ -44,6 +46,14 @@ public class BaseAI
         if (item.AddedStats != null)
             score += item.AddedStats.Count;
         return score;
+    }
+
+    private static Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random)
+    {
+        var cells = map.WalkableCells;
+        if (cells.Count == 0)
+            return new Point(0, 0);
+        return cells[random.Next(cells.Count)];
     }
 
     private async Task CheckEquipmentAsync()
@@ -231,6 +241,68 @@ public class BaseAI
                         await Client.AttackAsync(dir);
                         _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
                     }
+                }
+            }
+            else
+            {
+                _currentTarget = null;
+                if (_searchDestination == null ||
+                    Functions.MaxDistance(current, _searchDestination.Value) <= 1 ||
+                    !map.IsWalkable(_searchDestination.Value.X, _searchDestination.Value.Y))
+                {
+                    _searchDestination = GetRandomPoint(map, Random);
+                    Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
+                }
+
+                List<Point> path = new();
+                try
+                {
+                    var obstacles = new HashSet<Point>();
+                    foreach (var obj in Client.TrackedObjects.Values)
+                    {
+                        if (obj.Id == Client.ObjectId) continue;
+                        if (obj.Dead) continue;
+                        if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
+                            obstacles.Add(obj.Location);
+                    }
+                    path = await PlayerAgents.Map.PathFinder.FindPathAsync(map, current, _searchDestination.Value, obstacles);
+                }
+                catch
+                {
+                    // ignore pathing errors
+                }
+
+                if (path.Count == 0)
+                {
+                    _searchDestination = GetRandomPoint(map, Random);
+                    await Task.Delay(WalkDelay);
+                    continue;
+                }
+
+                if (path.Count > 2)
+                {
+                    var first = path[1];
+                    var dir = Functions.DirectionFromPoint(current, first);
+                    if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
+                    {
+                        await Client.RunAsync(dir);
+                    }
+                    else if (Client.CanWalk(dir))
+                    {
+                        await Client.WalkAsync(dir);
+                    }
+                }
+                else if (path.Count > 1)
+                {
+                    var dir = Functions.DirectionFromPoint(current, path[1]);
+                    if (Client.CanWalk(dir))
+                        await Client.WalkAsync(dir);
+                }
+                else if (path.Count == 1)
+                {
+                    var dir = Functions.DirectionFromPoint(current, _searchDestination.Value);
+                    if (Client.CanWalk(dir))
+                        await Client.WalkAsync(dir);
                 }
             }
 

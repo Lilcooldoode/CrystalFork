@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.IO;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -11,6 +12,7 @@ public class MapData
     public int Width { get; private set; }
     public int Height { get; private set; }
     public bool[,] Walkable { get; private set; } = new bool[0,0];
+    public List<Point> WalkableCells { get; private set; } = new();
 
     private readonly string _path;
     private readonly ReaderWriterLockSlim _lock = new();
@@ -68,6 +70,16 @@ public class MapData
                 Width = cells.GetLength(0);
                 Height = cells.GetLength(1);
                 Walkable = cells;
+                var list = new List<Point>();
+                for (int x = 0; x < Width; x++)
+                {
+                    for (int y = 0; y < Height; y++)
+                    {
+                        if (cells[x, y])
+                            list.Add(new Point(x, y));
+                    }
+                }
+                WalkableCells = list;
             }
             finally
             {
