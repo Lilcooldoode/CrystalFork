@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 
 public class NpcEntry
 {
@@ -19,6 +20,7 @@ public class NpcMemoryBank
     private DateTime _lastWriteTime;
     private readonly List<NpcEntry> _entries = new();
     private readonly object _lock = new();
+    private static readonly Mutex _fileMutex = new(false, "Global\\NpcMemoryBankMutex");
 
     public NpcMemoryBank(string path)
     {
@@ -31,7 +33,7 @@ public class NpcMemoryBank
         List<NpcEntry>? items = null;
         if (File.Exists(_path))
         {
-            using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
             items = JsonSerializer.Deserialize<List<NpcEntry>>(fs);
             _lastWriteTime = File.GetLastWriteTimeUtc(_path);
         }
@@ -46,10 +48,16 @@ public class NpcMemoryBank
 
     private void Save()
     {
-        string tmp = _path + ".tmp";
+        string json;
         lock (_lock)
         {
-            var json = JsonSerializer.Serialize(_entries, new JsonSerializerOptions { WriteIndented = true });
+            json = JsonSerializer.Serialize(_entries, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        _fileMutex.WaitOne();
+        try
+        {
+            string tmp = _path + ".tmp";
             using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
             using (var sw = new StreamWriter(fs))
             {
@@ -60,6 +68,10 @@ public class NpcMemoryBank
             else
                 File.Move(tmp, _path);
             _lastWriteTime = File.GetLastWriteTimeUtc(_path);
+        }
+        finally
+        {
+            _fileMutex.ReleaseMutex();
         }
     }
 
@@ -77,6 +89,7 @@ public class NpcMemoryBank
 
     public void AddNpc(string name, string mapFile, Point location)
     {
+        bool added = false;
         lock (_lock)
         {
             ReloadIfUpdated();
@@ -85,9 +98,12 @@ public class NpcMemoryBank
             if (!exists)
             {
                 _entries.Add(new NpcEntry { Name = name, MapFile = normalized, X = location.X, Y = location.Y });
-                Save();
+                added = true;
             }
         }
+
+        if (added)
+            Save();
     }
 
     public IReadOnlyList<NpcEntry> GetAll()
