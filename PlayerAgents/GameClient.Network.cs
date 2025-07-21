@@ -120,6 +120,7 @@ public partial class GameClient
             case S.MapChanged mc:
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentLocation = mc.Location;
+                _trackedObjects.Clear();
                 _ = LoadMapAsync();
                 break;
             case S.UserInformation info:
