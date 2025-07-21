@@ -195,6 +195,12 @@ public partial class GameClient
         await SendAsync(new C.PickUp());
     }
 
+    public async Task HarvestAsync(MirDirection direction)
+    {
+        if (_stream == null) return;
+        await SendAsync(new C.Harvest { Direction = direction });
+    }
+
     public async Task DropItemAsync(UserItem item)
     {
         if (_stream == null) return;

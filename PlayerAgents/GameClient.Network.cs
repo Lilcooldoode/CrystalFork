@@ -257,7 +257,20 @@ public partial class GameClient
                 if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
                 {
                     objD.Dead = true;
+                    if (objD.Type == ObjectType.Monster && AutoHarvestAIs.Contains(objD.AI) && objD.EngagedWith == _objectId)
+                    {
+                        _ = Task.Run(async () => await HarvestLoopAsync(objD));
+                    }
                 }
+                break;
+            case S.ObjectHarvested oh:
+                if (_trackedObjects.TryGetValue(oh.ObjectID, out var objH))
+                {
+                    objH.Location = oh.Location;
+                    objH.Direction = oh.Direction;
+                }
+                if (_harvestTargetId.HasValue && oh.ObjectID == _harvestTargetId.Value)
+                    _harvestComplete = true;
                 break;
             case S.ObjectRemove ore:
                 _trackedObjects.TryRemove(ore.ObjectID, out _);
@@ -313,6 +326,10 @@ public partial class GameClient
                 break;
             case S.GainExperience ge:
                 Console.WriteLine($"I gained {ge.Amount} experience");
+                break;
+            case S.Chat chat:
+                break;
+            case S.ObjectChat oc:
                 break;
             case S.LoseGold lg:
                 if (lg.Gold > _gold) _gold = 0;

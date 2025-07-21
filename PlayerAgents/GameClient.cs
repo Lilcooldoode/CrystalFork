@@ -50,6 +50,16 @@ public partial class GameClient
     // Use a dictionary for faster lookups by item index
     public static readonly Dictionary<int, ItemInfo> ItemInfoDict = new();
 
+    private static readonly HashSet<byte> AutoHarvestAIs = new() { 1, 2, 4, 5, 7, 9 };
+
+    private bool _awaitingHarvest;
+    private uint? _harvestTargetId;
+    private bool _harvestComplete;
+    private static readonly TimeSpan HarvestDelay = TimeSpan.FromMilliseconds(600);
+    private DateTime _nextHarvestTime = DateTime.MinValue;
+
+    public bool IsHarvesting => _awaitingHarvest;
+
     private static void Bind(UserItem item)
     {
         if (ItemInfoDict.TryGetValue(item.ItemIndex, out var info))
@@ -125,5 +135,45 @@ public partial class GameClient
             }
         }
         return baseWeight + extra;
+    }
+
+    private bool HasFreeBagSpace()
+    {
+        if (_inventory == null) return true;
+        for (int i = 0; i < _inventory.Length; i++)
+            if (_inventory[i] == null) return true;
+        return false;
+    }
+
+    private async Task HarvestLoopAsync(TrackedObject monster)
+    {
+        _awaitingHarvest = true;
+        _harvestTargetId = monster.Id;
+        _harvestComplete = false;
+
+        while (!_harvestComplete)
+        {
+            if (!HasFreeBagSpace() || GetCurrentBagWeight() >= GetMaxBagWeight())
+                break;
+
+            if (_trackedObjects.Values.Any(o => o.Type == ObjectType.Monster && !o.Dead &&
+                Functions.MaxDistance(_currentLocation, o.Location) <= 1))
+            {
+                await Task.Delay(HarvestDelay);
+                continue;
+            }
+
+            if (DateTime.UtcNow < _nextHarvestTime)
+                await Task.Delay(_nextHarvestTime - DateTime.UtcNow);
+
+            var dir = Functions.DirectionFromPoint(_currentLocation, monster.Location);
+            await HarvestAsync(dir);
+            _nextHarvestTime = DateTime.UtcNow + HarvestDelay;
+
+            await Task.Delay(HarvestDelay);
+        }
+
+        _awaitingHarvest = false;
+        _harvestTargetId = null;
     }
 }

@@ -240,6 +240,7 @@ public class BaseAI
     public virtual async Task RunAsync()
     {
         bool sentRevive = false;
+        Point current;
         while (true)
         {
             if (Client.Dead)
@@ -252,6 +253,24 @@ public class BaseAI
                 }
                 await Task.Delay(WalkDelay);
                 if (!Client.Dead) sentRevive = false;
+                continue;
+            }
+
+            if (Client.IsHarvesting)
+            {
+                current = Client.CurrentLocation;
+                int dist;
+                var target = FindClosestTarget(current, out dist);
+                if (target != null && target.Type == ObjectType.Monster && dist <= 1)
+                {
+                    if (DateTime.UtcNow >= _nextAttackTime)
+                    {
+                        var dir = Functions.DirectionFromPoint(current, target.Location);
+                        await Client.AttackAsync(dir);
+                        _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
+                    }
+                }
+                await Task.Delay(WalkDelay);
                 continue;
             }
 
@@ -274,7 +293,7 @@ public class BaseAI
                 continue;
             }
 
-            var current = Client.CurrentLocation;
+            current = Client.CurrentLocation;
             int distance;
             var closest = FindClosestTarget(current, out distance);
 
