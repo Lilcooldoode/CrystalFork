@@ -56,6 +56,24 @@ public class BaseAI
         return cells[random.Next(cells.Count)];
     }
 
+    private UserItem? GetBestItemForSlot(EquipmentSlot slot, IEnumerable<UserItem?> inventory, UserItem? current)
+    {
+        int bestScore = current != null ? GetItemScore(current, slot) : -1;
+        UserItem? bestItem = current;
+        foreach (var item in inventory)
+        {
+            if (item == null) continue;
+            if (!Client.CanEquipItem(item, slot)) continue;
+            int score = GetItemScore(item, slot);
+            if (bestItem == null || score > bestScore)
+            {
+                bestItem = item;
+                bestScore = score;
+            }
+        }
+        return bestItem;
+    }
+
     private async Task CheckEquipmentAsync()
     {
         var inventory = Client.Inventory;
@@ -67,20 +85,7 @@ public class BaseAI
             var equipSlot = (EquipmentSlot)slot;
             if (equipSlot == EquipmentSlot.Torch) continue;
             UserItem? current = equipment[slot];
-            int bestScore = current != null ? GetItemScore(current, equipSlot) : -1;
-            UserItem? bestItem = current;
-
-            foreach (var item in inventory)
-            {
-                if (item == null) continue;
-                if (!Client.CanEquipItem(item, equipSlot)) continue;
-                int score = GetItemScore(item, equipSlot);
-                if (bestItem == null || score > bestScore)
-                {
-                    bestItem = item;
-                    bestScore = score;
-                }
-            }
+            UserItem? bestItem = GetBestItemForSlot(equipSlot, inventory, current);
 
             if (bestItem != null && bestItem != current)
             {
@@ -95,21 +100,7 @@ public class BaseAI
         UserItem? currentTorch = equipment.Count > (int)torchSlot ? equipment[(int)torchSlot] : null;
         if (Client.TimeOfDay == LightSetting.Night)
         {
-            int bestScore = currentTorch != null ? GetItemScore(currentTorch, torchSlot) : -1;
-            UserItem? bestTorch = currentTorch;
-
-            foreach (var item in inventory)
-            {
-                if (item == null) continue;
-                if (!Client.CanEquipItem(item, torchSlot)) continue;
-                int score = GetItemScore(item, torchSlot);
-                if (bestTorch == null || score > bestScore)
-                {
-                    bestTorch = item;
-                    bestScore = score;
-                }
-            }
-
+            UserItem? bestTorch = GetBestItemForSlot(torchSlot, inventory, currentTorch);
             if (bestTorch != null && bestTorch != currentTorch)
             {
                 await Client.EquipItemAsync(bestTorch, torchSlot);
@@ -122,6 +113,79 @@ public class BaseAI
             if (currentTorch.Info != null)
                 Console.WriteLine($"I have unequipped {currentTorch.Info.FriendlyName}");
             await Client.UnequipItemAsync(torchSlot);
+        }
+    }
+
+    private TrackedObject? FindClosestTarget(Point current, out int bestDist)
+    {
+        TrackedObject? closest = null;
+        bestDist = int.MaxValue;
+        foreach (var obj in Client.TrackedObjects.Values)
+        {
+            if (obj.Type != ObjectType.Monster) continue;
+            if (obj.Dead) continue;
+            if (IgnoredAIs.Contains(obj.AI)) continue;
+            if (obj.EngagedWith.HasValue && obj.EngagedWith.Value != Client.ObjectId &&
+                DateTime.UtcNow - obj.LastEngagedTime < TimeSpan.FromSeconds(5))
+                continue;
+            int dist = Functions.MaxDistance(current, obj.Location);
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                closest = obj;
+            }
+        }
+        return closest;
+    }
+
+    private HashSet<Point> BuildObstacles(uint ignoreId = 0)
+    {
+        var obstacles = new HashSet<Point>();
+        foreach (var obj in Client.TrackedObjects.Values)
+        {
+            if (obj.Id == ignoreId || obj.Id == Client.ObjectId) continue;
+            if (obj.Dead) continue;
+            if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
+                obstacles.Add(obj.Location);
+        }
+        return obstacles;
+    }
+
+    private async Task<List<Point>> FindPathAsync(PlayerAgents.Map.MapData map, Point start, Point dest, uint ignoreId = 0)
+    {
+        try
+        {
+            var obstacles = BuildObstacles(ignoreId);
+            return await PlayerAgents.Map.PathFinder.FindPathAsync(map, start, dest, obstacles);
+        }
+        catch
+        {
+            return new List<Point>();
+        }
+    }
+
+    private async Task MoveAlongPathAsync(List<Point> path, Point destination, Point current)
+    {
+        if (path.Count > 2)
+        {
+            var first = path[1];
+            var dir = Functions.DirectionFromPoint(current, first);
+            if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
+                await Client.RunAsync(dir);
+            else if (Client.CanWalk(dir))
+                await Client.WalkAsync(dir);
+        }
+        else if (path.Count > 1)
+        {
+            var dir = Functions.DirectionFromPoint(current, path[1]);
+            if (Client.CanWalk(dir))
+                await Client.WalkAsync(dir);
+        }
+        else if (path.Count == 1)
+        {
+            var dir = Functions.DirectionFromPoint(current, destination);
+            if (Client.CanWalk(dir))
+                await Client.WalkAsync(dir);
         }
     }
 
@@ -157,25 +221,8 @@ public class BaseAI
             }
 
             var current = Client.CurrentLocation;
-
-            TrackedObject? closest = null;
-            int bestDist = int.MaxValue;
-
-            foreach (var obj in Client.TrackedObjects.Values)
-            {
-                if (obj.Type != ObjectType.Monster) continue;
-                if (obj.Dead) continue;
-                if (IgnoredAIs.Contains(obj.AI)) continue;
-                if (obj.EngagedWith.HasValue && obj.EngagedWith.Value != Client.ObjectId &&
-                    DateTime.UtcNow - obj.LastEngagedTime < TimeSpan.FromSeconds(5))
-                    continue;
-                int dist = Functions.MaxDistance(current, obj.Location);
-                if (dist < bestDist)
-                {
-                    bestDist = dist;
-                    closest = obj;
-                }
-            }
+            int distance;
+            var closest = FindClosestTarget(current, out distance);
 
             if (closest != null)
             {
@@ -185,62 +232,16 @@ public class BaseAI
                     _currentTarget = closest;
                 }
 
-                if (bestDist > 1)
+                if (distance > 1)
                 {
-                    List<Point> path = new();
-                    try
-                    {
-                        var obstacles = new HashSet<Point>();
-                        foreach (var obj in Client.TrackedObjects.Values)
-                        {
-                            if (obj.Id == closest.Id) continue;
-                            if (obj.Id == Client.ObjectId) continue;
-                            if (obj.Dead) continue;
-                            if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
-                                obstacles.Add(obj.Location);
-                        }
-                        path = await PlayerAgents.Map.PathFinder.FindPathAsync(map, current, closest.Location, obstacles);
-                    }
-                    catch
-                    {
-                        // ignore pathing errors
-                    }
-
-                    if (path.Count > 2)
-                    {
-                        var first = path[1];
-                        var dir = Functions.DirectionFromPoint(current, first);
-                        if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
-                        {
-                            await Client.RunAsync(dir);
-                        }
-                        else if (Client.CanWalk(dir))
-                        {
-                            await Client.WalkAsync(dir);
-                        }
-                    }
-                    else if (path.Count > 1)
-                    {
-                        var dir = Functions.DirectionFromPoint(current, path[1]);
-                        if (Client.CanWalk(dir))
-                            await Client.WalkAsync(dir);
-                    }
-                    else if (path.Count == 1)
-                    {
-                        var dir = Functions.DirectionFromPoint(current, closest.Location);
-                        if (Client.CanWalk(dir))
-                            await Client.WalkAsync(dir);
-                    }
-
+                    var path = await FindPathAsync(map, current, closest.Location, closest.Id);
+                    await MoveAlongPathAsync(path, closest.Location, current);
                 }
-                else
+                else if (DateTime.UtcNow >= _nextAttackTime)
                 {
-                    if (DateTime.UtcNow >= _nextAttackTime)
-                    {
-                        var dir = Functions.DirectionFromPoint(current, closest.Location);
-                        await Client.AttackAsync(dir);
-                        _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
-                    }
+                    var dir = Functions.DirectionFromPoint(current, closest.Location);
+                    await Client.AttackAsync(dir);
+                    _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
                 }
             }
             else
@@ -254,56 +255,14 @@ public class BaseAI
                     Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
                 }
 
-                List<Point> path = new();
-                try
-                {
-                    var obstacles = new HashSet<Point>();
-                    foreach (var obj in Client.TrackedObjects.Values)
-                    {
-                        if (obj.Id == Client.ObjectId) continue;
-                        if (obj.Dead) continue;
-                        if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
-                            obstacles.Add(obj.Location);
-                    }
-                    path = await PlayerAgents.Map.PathFinder.FindPathAsync(map, current, _searchDestination.Value, obstacles);
-                }
-                catch
-                {
-                    // ignore pathing errors
-                }
-
+                var path = await FindPathAsync(map, current, _searchDestination.Value);
                 if (path.Count == 0)
                 {
                     _searchDestination = GetRandomPoint(map, Random);
                     await Task.Delay(WalkDelay);
                     continue;
                 }
-
-                if (path.Count > 2)
-                {
-                    var first = path[1];
-                    var dir = Functions.DirectionFromPoint(current, first);
-                    if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
-                    {
-                        await Client.RunAsync(dir);
-                    }
-                    else if (Client.CanWalk(dir))
-                    {
-                        await Client.WalkAsync(dir);
-                    }
-                }
-                else if (path.Count > 1)
-                {
-                    var dir = Functions.DirectionFromPoint(current, path[1]);
-                    if (Client.CanWalk(dir))
-                        await Client.WalkAsync(dir);
-                }
-                else if (path.Count == 1)
-                {
-                    var dir = Functions.DirectionFromPoint(current, _searchDestination.Value);
-                    if (Client.CanWalk(dir))
-                        await Client.WalkAsync(dir);
-                }
+                await MoveAlongPathAsync(path, _searchDestination.Value, current);
             }
 
             await Task.Delay(WalkDelay);
