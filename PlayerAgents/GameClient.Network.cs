@@ -247,13 +247,13 @@ public partial class GameClient
                     _lastAttackTarget = null;
                 }
                 break;
+            case S.Death death:
+                Console.WriteLine("I have died.");
+                _dead = true;
+                _currentLocation = death.Location;
+                break;
             case S.ObjectDied od:
-                if (od.ObjectID == _objectId)
-                {
-                    Console.WriteLine("I have died.");
-                    _dead = true;
-                }
-                else if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
+                if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
                 {
                     objD.Dead = true;
                 }
