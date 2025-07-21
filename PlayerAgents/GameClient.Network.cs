@@ -159,6 +159,11 @@ public partial class GameClient
                 break;
             case S.ObjectNPC on:
                 _trackedObjects[on.ObjectID] = new TrackedObject(on.ObjectID, ObjectType.Merchant, on.Name, on.Location, on.Direction);
+                if (!string.IsNullOrEmpty(_currentMapFile))
+                {
+                    var mapId = Path.GetFileNameWithoutExtension(_currentMapFile);
+                    _npcMemory.AddNpc(on.Name, mapId, on.Location);
+                }
                 break;
             case S.ObjectItem oi:
                 _trackedObjects[oi.ObjectID] = new TrackedObject(oi.ObjectID, ObjectType.Item, oi.Name, oi.Location, MirDirection.Up);
@@ -479,6 +484,7 @@ public partial class GameClient
             await Task.Delay(5000);
             try
             {
+                _npcMemory.CheckForUpdates();
                 await SendAsync(new C.KeepAlive { Time = Environment.TickCount64 });
             }
             catch (Exception ex)

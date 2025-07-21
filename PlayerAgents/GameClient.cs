@@ -13,6 +13,7 @@ using PlayerAgents.Map;
 public partial class GameClient
 {
     private readonly Config _config;
+    private readonly NpcMemoryBank _npcMemory;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private long _pingTime;
@@ -104,9 +105,10 @@ public partial class GameClient
     public int HP => _hp;
     public int MP => _mp;
 
-    public GameClient(Config config)
+    public GameClient(Config config, NpcMemoryBank npcMemory)
     {
         _config = config;
+        _npcMemory = npcMemory;
     }
 
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));
