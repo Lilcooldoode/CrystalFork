@@ -3,6 +3,7 @@ using Shared;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Linq;
 using System.Threading.Tasks;
 
 public class BaseAI
@@ -80,16 +81,21 @@ public class BaseAI
         var equipment = Client.Equipment;
         if (inventory == null || equipment == null) return;
 
+        // create a mutable copy so we can mark equipped items as used
+        var available = inventory.ToList();
+
         for (int slot = 0; slot < equipment.Count; slot++)
         {
             var equipSlot = (EquipmentSlot)slot;
             if (equipSlot == EquipmentSlot.Torch) continue;
             UserItem? current = equipment[slot];
-            UserItem? bestItem = GetBestItemForSlot(equipSlot, inventory, current);
+            UserItem? bestItem = GetBestItemForSlot(equipSlot, available, current);
 
             if (bestItem != null && bestItem != current)
             {
                 await Client.EquipItemAsync(bestItem, equipSlot);
+                int idx = available.IndexOf(bestItem);
+                if (idx >= 0) available[idx] = null; // prevent using same item twice
                 if (bestItem.Info != null)
                     Console.WriteLine($"I have equipped {bestItem.Info.FriendlyName}");
             }
@@ -100,10 +106,12 @@ public class BaseAI
         UserItem? currentTorch = equipment.Count > (int)torchSlot ? equipment[(int)torchSlot] : null;
         if (Client.TimeOfDay == LightSetting.Night)
         {
-            UserItem? bestTorch = GetBestItemForSlot(torchSlot, inventory, currentTorch);
+            UserItem? bestTorch = GetBestItemForSlot(torchSlot, available, currentTorch);
             if (bestTorch != null && bestTorch != currentTorch)
             {
                 await Client.EquipItemAsync(bestTorch, torchSlot);
+                int idx = available.IndexOf(bestTorch);
+                if (idx >= 0) available[idx] = null;
                 if (bestTorch.Info != null)
                     Console.WriteLine($"I have equipped {bestTorch.Info.FriendlyName}");
             }

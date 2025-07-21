@@ -311,6 +311,9 @@ public partial class GameClient
             case S.GainedGold gg:
                 _gold += gg.Gold;
                 break;
+            case S.GainExperience ge:
+                Console.WriteLine($"I gained {ge.Amount} experience");
+                break;
             case S.LoseGold lg:
                 if (lg.Gold > _gold) _gold = 0;
                 else _gold -= lg.Gold;
