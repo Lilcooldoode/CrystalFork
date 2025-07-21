@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.IO;
 using ClientPackets;
 using Shared;
 
@@ -72,7 +73,10 @@ internal class Program
                 }
             }
 
-            var client = new GameClient(config);
+            var npcFile = Path.Combine(AppContext.BaseDirectory, "npc_memory.json");
+            var memoryBank = new NpcMemoryBank(npcFile);
+
+            var client = new GameClient(config, memoryBank);
             await client.ConnectAsync();
             await client.LoginAsync();
 
