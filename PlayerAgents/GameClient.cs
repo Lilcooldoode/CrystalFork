@@ -33,6 +33,8 @@ public partial class GameClient
     private ushort _level;
     private UserItem[]? _inventory;
     private UserItem[]? _equipment;
+    private UserItem? _lastPickedItem;
+    private uint _gold;
 
     private uint? _lastAttackTarget;
     private uint? _lastStruckAttacker;
@@ -85,6 +87,8 @@ public partial class GameClient
     public Point CurrentLocation => _currentLocation;
     public long PingTime => _pingTime;
     public uint ObjectId => _objectId;
+    public uint Gold => _gold;
+    public UserItem? LastPickedItem => _lastPickedItem;
 
     public GameClient(Config config)
     {
@@ -92,4 +96,34 @@ public partial class GameClient
     }
 
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));
+
+    public int GetCurrentBagWeight()
+    {
+        int weight = 0;
+        if (_inventory != null)
+        {
+            foreach (var item in _inventory)
+                if (item != null)
+                    weight += item.Weight;
+        }
+        return weight;
+    }
+
+    public int GetMaxBagWeight()
+    {
+        if (_playerClass == null) return int.MaxValue;
+        var stats = new BaseStats(_playerClass.Value);
+        int baseWeight = stats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
+        int extra = 0;
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item == null || item.Info == null) continue;
+                extra += item.Info.Stats[Stat.BagWeight];
+                extra += item.AddedStats[Stat.BagWeight];
+            }
+        }
+        return baseWeight + extra;
+    }
 }

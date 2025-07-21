@@ -118,24 +118,64 @@ public class BaseAI
 
     private TrackedObject? FindClosestTarget(Point current, out int bestDist)
     {
-        TrackedObject? closest = null;
-        bestDist = int.MaxValue;
+        TrackedObject? closestMonster = null;
+        int monsterDist = int.MaxValue;
+        TrackedObject? closestItem = null;
+        int itemDist = int.MaxValue;
+
         foreach (var obj in Client.TrackedObjects.Values)
         {
-            if (obj.Type != ObjectType.Monster) continue;
-            if (obj.Dead) continue;
-            if (IgnoredAIs.Contains(obj.AI)) continue;
-            if (obj.EngagedWith.HasValue && obj.EngagedWith.Value != Client.ObjectId &&
-                DateTime.UtcNow - obj.LastEngagedTime < TimeSpan.FromSeconds(5))
-                continue;
-            int dist = Functions.MaxDistance(current, obj.Location);
-            if (dist < bestDist)
+            if (obj.Type == ObjectType.Monster)
             {
-                bestDist = dist;
-                closest = obj;
+                if (obj.Dead) continue;
+                if (IgnoredAIs.Contains(obj.AI)) continue;
+                if (obj.EngagedWith.HasValue && obj.EngagedWith.Value != Client.ObjectId &&
+                    DateTime.UtcNow - obj.LastEngagedTime < TimeSpan.FromSeconds(5))
+                    continue;
+                int dist = Functions.MaxDistance(current, obj.Location);
+                if (dist < monsterDist)
+                {
+                    monsterDist = dist;
+                    closestMonster = obj;
+                }
+            }
+            else if (obj.Type == ObjectType.Item)
+            {
+                int dist = Functions.MaxDistance(current, obj.Location);
+                if (dist < itemDist)
+                {
+                    itemDist = dist;
+                    closestItem = obj;
+                }
             }
         }
-        return closest;
+
+        // Prioritize adjacent monsters
+        if (closestMonster != null && monsterDist <= 1)
+        {
+            bestDist = monsterDist;
+            return closestMonster;
+        }
+
+        // choose nearest between remaining options
+        if (closestMonster != null && (closestItem == null || monsterDist <= itemDist))
+        {
+            bestDist = monsterDist;
+            return closestMonster;
+        }
+
+        if (closestItem != null)
+        {
+            bool isGold = string.Equals(closestItem.Name, "Gold", StringComparison.OrdinalIgnoreCase);
+            if (isGold || Client.GetCurrentBagWeight() < Client.GetMaxBagWeight())
+            {
+                bestDist = itemDist;
+                return closestItem;
+            }
+        }
+
+        bestDist = int.MaxValue;
+        return null;
     }
 
     private HashSet<Point> BuildObstacles(uint ignoreId = 0)
@@ -213,6 +253,12 @@ public class BaseAI
                 _nextEquipCheck = DateTime.UtcNow + EquipCheckInterval;
             }
 
+            if (Client.GetCurrentBagWeight() > Client.GetMaxBagWeight() && Client.LastPickedItem != null)
+            {
+                Console.WriteLine("Overweight detected, dropping last picked item");
+                await Client.DropItemAsync(Client.LastPickedItem);
+            }
+
             var map = Client.CurrentMap;
             if (map == null || !Client.IsMapLoaded)
             {
@@ -232,16 +278,32 @@ public class BaseAI
                     _currentTarget = closest;
                 }
 
-                if (distance > 1)
+                if (closest.Type == ObjectType.Item)
                 {
-                    var path = await FindPathAsync(map, current, closest.Location, closest.Id);
-                    await MoveAlongPathAsync(path, closest.Location, current);
+                    if (distance > 0)
+                    {
+                        var path = await FindPathAsync(map, current, closest.Location, closest.Id);
+                        await MoveAlongPathAsync(path, closest.Location, current);
+                    }
+                    else
+                    {
+                        await Client.PickUpAsync();
+                        _currentTarget = null;
+                    }
                 }
-                else if (DateTime.UtcNow >= _nextAttackTime)
+                else
                 {
-                    var dir = Functions.DirectionFromPoint(current, closest.Location);
-                    await Client.AttackAsync(dir);
-                    _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
+                    if (distance > 1)
+                    {
+                        var path = await FindPathAsync(map, current, closest.Location, closest.Id);
+                        await MoveAlongPathAsync(path, closest.Location, current);
+                    }
+                    else if (DateTime.UtcNow >= _nextAttackTime)
+                    {
+                        var dir = Functions.DirectionFromPoint(current, closest.Location);
+                        await Client.AttackAsync(dir);
+                        _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
+                    }
                 }
             }
             else

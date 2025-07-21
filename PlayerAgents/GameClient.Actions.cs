@@ -188,4 +188,22 @@ public partial class GameClient
             _ => false
         };
     }
+
+    public async Task PickUpAsync()
+    {
+        if (_stream == null) return;
+        await SendAsync(new C.PickUp());
+    }
+
+    public async Task DropItemAsync(UserItem item)
+    {
+        if (_stream == null) return;
+        var drop = new C.DropItem
+        {
+            UniqueID = item.UniqueID,
+            Count = item.Count,
+            HeroInventory = false
+        };
+        await SendAsync(drop);
+    }
 }

@@ -299,6 +299,21 @@ public partial class GameClient
                         }
                     }
                 }
+                _lastPickedItem = gi.Item;
+                if (gi.Item.Info != null)
+                    Console.WriteLine($"Gained item: {gi.Item.Info.FriendlyName}");
+                if (GetCurrentBagWeight() > GetMaxBagWeight())
+                {
+                    Console.WriteLine("Overweight, dropping last item...");
+                    _ = Task.Run(async () => await DropItemAsync(gi.Item));
+                }
+                break;
+            case S.GainedGold gg:
+                _gold += gg.Gold;
+                break;
+            case S.LoseGold lg:
+                if (lg.Gold > _gold) _gold = 0;
+                else _gold -= lg.Gold;
                 break;
             case S.MoveItem mi:
                 if (mi.Grid == MirGridType.Inventory && _inventory != null && mi.Success && mi.From >= 0 && mi.To >= 0 && mi.From < _inventory.Length && mi.To < _inventory.Length)
@@ -329,6 +344,25 @@ public partial class GameClient
                         _inventory[ri.To] = _equipment[eqIndex];
                         _equipment[eqIndex] = null;
                     }
+                }
+                break;
+            case S.DropItem di:
+                if (di.Success && _inventory != null)
+                {
+                    int idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == di.UniqueID);
+                    if (idx >= 0)
+                    {
+                        var it = _inventory[idx];
+                        if (it != null)
+                        {
+                            if (di.Count >= it.Count)
+                                _inventory[idx] = null;
+                            else
+                                it.Count -= di.Count;
+                        }
+                    }
+                    if (_lastPickedItem != null && _lastPickedItem.UniqueID == di.UniqueID)
+                        _lastPickedItem = null;
                 }
                 break;
             case S.DeleteItem di:
