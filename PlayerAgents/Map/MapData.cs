@@ -12,6 +12,7 @@ public class MapData
     public int Width { get; private set; }
     public int Height { get; private set; }
     public bool[,] Walkable { get; private set; } = new bool[0,0];
+    public byte[,] Doors { get; private set; } = new byte[0,0];
     public List<Point> WalkableCells { get; private set; } = new();
 
     private readonly string _path;
@@ -50,7 +51,7 @@ public class MapData
             }
 
             var type = MapParser.FindType(bytes);
-            bool[,] cells = type switch
+            var cells = type switch
             {
                 0 => MapParser.LoadV0(bytes),
                 1 => MapParser.LoadV1(bytes),
@@ -67,15 +68,16 @@ public class MapData
             _lock.EnterWriteLock();
             try
             {
-                Width = cells.GetLength(0);
-                Height = cells.GetLength(1);
-                Walkable = cells;
+                Width = cells.Walk.GetLength(0);
+                Height = cells.Walk.GetLength(1);
+                Walkable = cells.Walk;
+                Doors = cells.Doors;
                 var list = new List<Point>();
                 for (int x = 0; x < Width; x++)
                 {
                     for (int y = 0; y < Height; y++)
                     {
-                        if (cells[x, y])
+                        if (cells.Walk[x, y])
                             list.Add(new Point(x, y));
                     }
                 }
@@ -99,6 +101,20 @@ public class MapData
         {
             if (x < 0 || y < 0 || x >= Width || y >= Height) return false;
             return Walkable[x, y];
+        }
+        finally
+        {
+            _lock.ExitReadLock();
+        }
+    }
+
+    public byte GetDoorIndex(int x, int y)
+    {
+        _lock.EnterReadLock();
+        try
+        {
+            if (x < 0 || y < 0 || x >= Width || y >= Height) return 0;
+            return Doors[x, y];
         }
         finally
         {

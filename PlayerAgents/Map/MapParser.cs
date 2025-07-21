@@ -4,6 +4,17 @@ namespace PlayerAgents.Map;
 
 internal static class MapParser
 {
+    internal readonly struct MapCells
+    {
+        public readonly bool[,] Walk;
+        public readonly byte[,] Doors;
+
+        public MapCells(bool[,] walk, byte[,] doors)
+        {
+            Walk = walk;
+            Doors = doors;
+        }
+    }
     public static byte FindType(byte[] bytes)
     {
         if (bytes.Length < 4) return 0;
@@ -23,12 +34,13 @@ internal static class MapParser
         return 0;
     }
 
-    public static bool[,] LoadV0(byte[] bytes)
+    public static MapCells LoadV0(byte[] bytes)
     {
         int offset = 0;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 52;
         for (int x = 0; x < width; x++)
         {
@@ -41,14 +53,20 @@ internal static class MapParser
                 offset += 2;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
                 offset += 4;
-                offset += 4;
+
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
+                offset += 3;
+
+                offset += 1; // light
+
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV1(byte[] bytes)
+    public static MapCells LoadV1(byte[] bytes)
     {
         int offset = 21;
         int w = BitConverter.ToInt16(bytes, offset); offset += 2;
@@ -57,6 +75,7 @@ internal static class MapParser
         int width = w ^ xor;
         int height = h ^ xor;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 54;
         for (int x = 0; x < width; x++)
         {
@@ -67,19 +86,27 @@ internal static class MapParser
                 offset += 6;
                 if (((BitConverter.ToInt16(bytes, offset) ^ xor) & 0x8000) != 0) walkable = false;
                 offset += 2;
-                offset += 7;
+
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
+                offset += 5;
+
+                offset += 1; // light
+                offset += 1; // unknown
+
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV2(byte[] bytes)
+    public static MapCells LoadV2(byte[] bytes)
     {
         int offset = 0;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 52;
         for (int x = 0; x < width; x++)
         {
@@ -92,19 +119,27 @@ internal static class MapParser
                 offset += 2;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
                 offset += 2;
-                offset += 7;
+
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
+                offset += 5;
+
+                offset += 1; // light
+                offset += 2;
+
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV3(byte[] bytes)
+    public static MapCells LoadV3(byte[] bytes)
     {
         int offset = 0;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 52;
         for (int x = 0; x < width; x++)
         {
@@ -117,14 +152,21 @@ internal static class MapParser
                 offset += 2;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
                 offset += 2;
+
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
+                offset += 12;
+
+                offset += 1; // light
                 offset += 17;
+
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV4(byte[] bytes)
+    public static MapCells LoadV4(byte[] bytes)
     {
         int offset = 31;
         int w = BitConverter.ToInt16(bytes, offset); offset += 2;
@@ -133,6 +175,7 @@ internal static class MapParser
         int width = w ^ xor;
         int height = h ^ xor;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 64;
         for (int x = 0; x < width; x++)
         {
@@ -142,20 +185,24 @@ internal static class MapParser
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
                 offset += 2;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
-                offset += 2;
+
+                offset += 4;
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
                 offset += 6;
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV5(byte[] bytes)
+    public static MapCells LoadV5(byte[] bytes)
     {
         int offset = 22;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 28 + (3 * ((width / 2) + (width % 2)) * (height / 2));
         for (int x = 0; x < width; x++)
         {
@@ -169,15 +216,16 @@ internal static class MapParser
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV6(byte[] bytes)
+    public static MapCells LoadV6(byte[] bytes)
     {
         int offset = 16;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 40;
         for (int x = 0; x < width; x++)
         {
@@ -191,15 +239,16 @@ internal static class MapParser
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV7(byte[] bytes)
+    public static MapCells LoadV7(byte[] bytes)
     {
         int offset = 21;
         int width = BitConverter.ToInt16(bytes, offset); offset += 4;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 54;
         for (int x = 0; x < width; x++)
         {
@@ -209,21 +258,28 @@ internal static class MapParser
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
                 offset += 6;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
+
                 offset += 2;
-                offset += 7;
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
+                offset += 4;
+
+                offset += 1; // light
+                offset += 2;
+
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 
-    public static bool[,] LoadV100(byte[] bytes)
+    public static MapCells LoadV100(byte[] bytes)
     {
         int offset = 4;
         int width = BitConverter.ToInt16(bytes, offset); offset += 2;
         int height = BitConverter.ToInt16(bytes, offset); offset += 2;
-
         bool[,] walk = new bool[width, height];
+        byte[,] doors = new byte[width, height];
         offset = 8;
         for (int x = 0; x < width; x++)
         {
@@ -235,11 +291,16 @@ internal static class MapParser
                 offset += 10;
                 if ((BitConverter.ToInt16(bytes, offset) & 0x8000) != 0) walkable = false;
                 offset += 2;
+
+                byte door = bytes[offset];
+                if (door > 0) doors[x, y] = door;
                 offset += 11;
-                offset += 1;
+
+                offset += 1; // light
+
                 walk[x, y] = walkable;
             }
         }
-        return walk;
+        return new MapCells(walk, doors);
     }
 }

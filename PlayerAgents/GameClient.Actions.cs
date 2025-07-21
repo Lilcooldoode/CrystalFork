@@ -8,6 +8,7 @@ public partial class GameClient
     {
         if (_stream == null) return;
         var target = Functions.PointMove(_currentLocation, direction, 1);
+        await TryOpenDoorAsync(target);
         Console.WriteLine($"I am walking to {target.X}, {target.Y}");
         var walk = new C.Walk { Direction = direction };
         await SendAsync(walk);
@@ -18,7 +19,10 @@ public partial class GameClient
     public async Task RunAsync(MirDirection direction)
     {
         if (_stream == null) return;
+        var first = Functions.PointMove(_currentLocation, direction, 1);
         var target = Functions.PointMove(_currentLocation, direction, 2);
+        await TryOpenDoorAsync(first);
+        await TryOpenDoorAsync(target);
         Console.WriteLine($"I am running to {target.X}, {target.Y}");
         var run = new C.Run { Direction = direction };
         await SendAsync(run);
@@ -41,6 +45,14 @@ public partial class GameClient
         }
 
         return false;
+    }
+
+    private async Task TryOpenDoorAsync(Point p)
+    {
+        if (_mapData == null) return;
+        byte door = _mapData.GetDoorIndex(p.X, p.Y);
+        if (door > 0)
+            await SendAsync(new C.Opendoor { DoorIndex = door });
     }
 
     public bool CanWalk(MirDirection direction)
