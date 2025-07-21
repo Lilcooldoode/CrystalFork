@@ -12,7 +12,9 @@ public class BaseAI
     protected readonly Random Random = new();
     private TrackedObject? _currentTarget;
     private Point? _searchDestination;
+    private DateTime _nextTargetSwitchTime = DateTime.MinValue;
 
+    protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
     // Using HashSet for faster Contains checks
     protected static readonly HashSet<EquipmentSlot> OffensiveSlots = new()
     {
@@ -303,8 +305,26 @@ public class BaseAI
             }
 
             current = Client.CurrentLocation;
+            if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
+            {
+                if (_currentTarget.Dead ||
+                    (_currentTarget.EngagedWith.HasValue && _currentTarget.EngagedWith.Value != Client.ObjectId))
+                    _nextTargetSwitchTime = DateTime.MinValue;
+            }
             int distance;
             var closest = FindClosestTarget(current, out distance);
+
+            if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster &&
+                !_currentTarget.Dead &&
+                (_currentTarget.EngagedWith == null || _currentTarget.EngagedWith.Value == Client.ObjectId) &&
+                Client.TrackedObjects.ContainsKey(_currentTarget.Id) &&
+                closest != null && closest.Type == ObjectType.Monster &&
+                closest.Id != _currentTarget.Id &&
+                DateTime.UtcNow < _nextTargetSwitchTime)
+            {
+                closest = _currentTarget;
+                distance = Functions.MaxDistance(current, _currentTarget.Location);
+            }
 
             if (closest != null)
             {
@@ -312,6 +332,8 @@ public class BaseAI
                 {
                     Console.WriteLine($"I have targeted {closest.Name} at {closest.Location.X}, {closest.Location.Y}");
                     _currentTarget = closest;
+                    if (closest.Type == ObjectType.Monster)
+                        _nextTargetSwitchTime = DateTime.UtcNow + TargetSwitchInterval;
                 }
 
                 if (closest.Type == ObjectType.Item)
