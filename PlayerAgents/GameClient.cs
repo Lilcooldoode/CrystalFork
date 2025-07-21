@@ -137,7 +137,7 @@ public partial class GameClient
         return baseWeight + extra;
     }
 
-    private bool HasFreeBagSpace()
+    public bool HasFreeBagSpace()
     {
         if (_inventory == null) return true;
         for (int i = 0; i < _inventory.Length; i++)

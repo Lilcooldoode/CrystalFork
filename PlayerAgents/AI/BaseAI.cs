@@ -39,6 +39,9 @@ public class BaseAI
     private DateTime _nextEquipCheck = DateTime.UtcNow;
     private DateTime _nextAttackTime = DateTime.UtcNow;
 
+    private readonly Dictionary<uint, DateTime> _itemRetryTimes = new();
+    private static readonly TimeSpan ItemRetryDelay = TimeSpan.FromMinutes(2);
+
     protected virtual int GetItemScore(UserItem item, EquipmentSlot slot)
     {
         int score = 0;
@@ -149,6 +152,8 @@ public class BaseAI
             }
             else if (obj.Type == ObjectType.Item)
             {
+                if (_itemRetryTimes.TryGetValue(obj.Id, out var retry) && DateTime.UtcNow < retry)
+                    continue;
                 int dist = Functions.MaxDistance(current, obj.Location);
                 if (dist < itemDist)
                 {
@@ -175,7 +180,7 @@ public class BaseAI
         if (closestItem != null)
         {
             bool isGold = string.Equals(closestItem.Name, "Gold", StringComparison.OrdinalIgnoreCase);
-            if (isGold || Client.GetCurrentBagWeight() < Client.GetMaxBagWeight())
+            if (isGold || (Client.HasFreeBagSpace() && Client.GetCurrentBagWeight() < Client.GetMaxBagWeight()))
             {
                 bestDist = itemDist;
                 return closestItem;
@@ -286,6 +291,10 @@ public class BaseAI
                 await Client.DropItemAsync(Client.LastPickedItem);
             }
 
+            foreach (var id in _itemRetryTimes.Keys.ToList())
+                if (!Client.TrackedObjects.ContainsKey(id))
+                    _itemRetryTimes.Remove(id);
+
             var map = Client.CurrentMap;
             if (map == null || !Client.IsMapLoaded)
             {
@@ -314,7 +323,11 @@ public class BaseAI
                     }
                     else
                     {
-                        await Client.PickUpAsync();
+                        if (Client.HasFreeBagSpace() && Client.GetCurrentBagWeight() < Client.GetMaxBagWeight())
+                        {
+                            await Client.PickUpAsync();
+                        }
+                        _itemRetryTimes[closest.Id] = DateTime.UtcNow + ItemRetryDelay;
                         _currentTarget = null;
                     }
                 }
