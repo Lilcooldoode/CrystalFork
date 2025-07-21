@@ -67,7 +67,7 @@ internal static class MapParser
                 offset += 6;
                 if (((BitConverter.ToInt16(bytes, offset) ^ xor) & 0x8000) != 0) walkable = false;
                 offset += 2;
-                offset += 6;
+                offset += 7;
                 walk[x, y] = walkable;
             }
         }
