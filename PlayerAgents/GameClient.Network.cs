@@ -347,6 +347,21 @@ public partial class GameClient
                         }
                     }
                 }
+                if (_equipment != null)
+                {
+                    int idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == di.UniqueID);
+                    if (idx >= 0)
+                    {
+                        var it = _equipment[idx];
+                        if (it != null)
+                        {
+                            if (it.Count > di.Count)
+                                it.Count -= di.Count;
+                            else
+                                _equipment[idx] = null;
+                        }
+                    }
+                }
                 break;
             case S.RefreshItem rfi:
                 var newItem = rfi.Item;
