@@ -201,6 +201,17 @@ public partial class GameClient
         await SendAsync(new C.Harvest { Direction = direction });
     }
 
+    public async Task UseItemAsync(UserItem item)
+    {
+        if (_stream == null) return;
+        var use = new C.UseItem
+        {
+            UniqueID = item.UniqueID,
+            Grid = MirGridType.Inventory
+        };
+        await SendAsync(use);
+    }
+
     public async Task DropItemAsync(UserItem item)
     {
         if (_stream == null) return;

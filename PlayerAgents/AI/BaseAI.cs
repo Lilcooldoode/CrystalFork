@@ -40,6 +40,7 @@ public class BaseAI
     protected virtual TimeSpan EquipCheckInterval => TimeSpan.FromSeconds(5);
     private DateTime _nextEquipCheck = DateTime.UtcNow;
     private DateTime _nextAttackTime = DateTime.UtcNow;
+    private DateTime _nextPotionTime = DateTime.MinValue;
 
     private readonly Dictionary<uint, DateTime> _itemRetryTimes = new();
     private static readonly TimeSpan ItemRetryDelay = TimeSpan.FromMinutes(2);
@@ -126,6 +127,47 @@ public class BaseAI
             if (currentTorch.Info != null)
                 Console.WriteLine($"I have unequipped {currentTorch.Info.FriendlyName}");
             await Client.UnequipItemAsync(torchSlot);
+        }
+    }
+
+    private async Task TryUsePotionsAsync()
+    {
+        if (DateTime.UtcNow < _nextPotionTime) return;
+
+        int maxHP = Client.GetMaxHP();
+        int maxMP = Client.GetMaxMP();
+
+        if (Client.HP < maxHP)
+        {
+            var pot = Client.FindPotion(true);
+            if (pot != null)
+            {
+                int heal = Client.GetPotionRestoreAmount(pot, true);
+                if (heal > 0 && maxHP - Client.HP >= heal)
+                {
+                    await Client.UseItemAsync(pot);
+                    string name = pot.Info?.FriendlyName ?? "HP potion";
+                    Console.WriteLine($"Used {name}");
+                    _nextPotionTime = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+                    return;
+                }
+            }
+        }
+
+        if (Client.MP < maxMP)
+        {
+            var pot = Client.FindPotion(false);
+            if (pot != null)
+            {
+                int heal = Client.GetPotionRestoreAmount(pot, false);
+                if (heal > 0 && maxMP - Client.MP >= heal)
+                {
+                    await Client.UseItemAsync(pot);
+                    string name = pot.Info?.FriendlyName ?? "MP potion";
+                    Console.WriteLine($"Used {name}");
+                    _nextPotionTime = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+                }
+            }
         }
     }
 
@@ -286,6 +328,8 @@ public class BaseAI
                 await CheckEquipmentAsync();
                 _nextEquipCheck = DateTime.UtcNow + EquipCheckInterval;
             }
+
+            await TryUsePotionsAsync();
 
             if (Client.GetCurrentBagWeight() > Client.GetMaxBagWeight() && Client.LastPickedItem != null)
             {

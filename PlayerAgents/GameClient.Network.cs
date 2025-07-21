@@ -130,6 +130,8 @@ public partial class GameClient
                 _currentLocation = info.Location;
                 _gender = info.Gender;
                 _level = info.Level;
+                _hp = info.HP;
+                _mp = info.MP;
                 _inventory = info.Inventory;
                 _equipment = info.Equipment;
                 BindAll(_inventory);
@@ -281,6 +283,8 @@ public partial class GameClient
                     Console.WriteLine("I have been revived.");
                 }
                 _dead = false;
+                _hp = GetMaxHP();
+                _mp = GetMaxMP();
                 break;
             case S.ObjectRevived orv:
                 if (orv.ObjectID == _objectId)
@@ -290,6 +294,8 @@ public partial class GameClient
                         Console.WriteLine("I have been revived.");
                     }
                     _dead = false;
+                    _hp = GetMaxHP();
+                    _mp = GetMaxMP();
                 }
                 else if (_trackedObjects.TryGetValue(orv.ObjectID, out var objRev))
                 {
@@ -334,6 +340,27 @@ public partial class GameClient
             case S.LoseGold lg:
                 if (lg.Gold > _gold) _gold = 0;
                 else _gold -= lg.Gold;
+                break;
+            case S.HealthChanged hc:
+                _hp = hc.HP;
+                _mp = hc.MP;
+                break;
+            case S.UseItem ui:
+                if (ui.Success && _inventory != null)
+                {
+                    int idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == ui.UniqueID);
+                    if (idx >= 0)
+                    {
+                        var it = _inventory[idx];
+                        if (it != null)
+                        {
+                            if (it.Count > 1)
+                                it.Count--;
+                            else
+                                _inventory[idx] = null;
+                        }
+                    }
+                }
                 break;
             case S.MoveItem mi:
                 if (mi.Grid == MirGridType.Inventory && _inventory != null && mi.Success && mi.From >= 0 && mi.To >= 0 && mi.From < _inventory.Length && mi.To < _inventory.Length)

@@ -31,6 +31,8 @@ public partial class GameClient
 
     private MirGender _gender;
     private ushort _level;
+    private int _hp;
+    private int _mp;
     private UserItem[]? _inventory;
     private UserItem[]? _equipment;
     private UserItem? _lastPickedItem;
@@ -99,6 +101,8 @@ public partial class GameClient
     public uint ObjectId => _objectId;
     public uint Gold => _gold;
     public UserItem? LastPickedItem => _lastPickedItem;
+    public int HP => _hp;
+    public int MP => _mp;
 
     public GameClient(Config config)
     {
@@ -137,12 +141,73 @@ public partial class GameClient
         return baseWeight + extra;
     }
 
+    public int GetMaxHP()
+    {
+        if (_playerClass == null) return int.MaxValue;
+        var stats = new BaseStats(_playerClass.Value);
+        int baseHP = stats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
+        int extra = 0;
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item == null || item.Info == null) continue;
+                extra += item.Info.Stats[Stat.HP];
+                extra += item.AddedStats[Stat.HP];
+            }
+        }
+        return baseHP + extra;
+    }
+
+    public int GetMaxMP()
+    {
+        if (_playerClass == null) return int.MaxValue;
+        var stats = new BaseStats(_playerClass.Value);
+        int baseMP = stats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
+        int extra = 0;
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item == null || item.Info == null) continue;
+                extra += item.Info.Stats[Stat.MP];
+                extra += item.AddedStats[Stat.MP];
+            }
+        }
+        return baseMP + extra;
+    }
+
     public bool HasFreeBagSpace()
     {
         if (_inventory == null) return true;
         for (int i = 0; i < _inventory.Length; i++)
             if (_inventory[i] == null) return true;
         return false;
+    }
+
+    public UserItem? FindPotion(bool hpPotion)
+    {
+        if (_inventory == null) return null;
+        foreach (var item in _inventory)
+        {
+            if (item?.Info == null) continue;
+            if (item.Info.Type != ItemType.Potion) continue;
+
+            bool healsHP = item.Info.Stats[Stat.HP] > 0 || item.Info.Stats[Stat.HPRatePercent] > 0;
+            bool healsMP = item.Info.Stats[Stat.MP] > 0 || item.Info.Stats[Stat.MPRatePercent] > 0;
+
+            if (hpPotion && healsHP) return item;
+            if (!hpPotion && healsMP) return item;
+        }
+        return null;
+    }
+
+    public int GetPotionRestoreAmount(UserItem item, bool hpPotion)
+    {
+        int max = hpPotion ? GetMaxHP() : GetMaxMP();
+        int flat = item.GetTotal(hpPotion ? Stat.HP : Stat.MP);
+        int percent = item.GetTotal(hpPotion ? Stat.HPRatePercent : Stat.MPRatePercent);
+        return flat + (max * percent) / 100;
     }
 
     private async Task HarvestLoopAsync(TrackedObject monster)
