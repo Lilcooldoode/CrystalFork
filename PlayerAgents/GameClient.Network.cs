@@ -138,6 +138,11 @@ public partial class GameClient
                 _classTcs.TrySetResult(info.Class);
                 break;
             case S.UserLocation loc:
+                if (loc.Location == _currentLocation)
+                {
+                    // movement request denied, revert to walking
+                    _canRun = false;
+                }
                 _currentLocation = loc.Location;
                 break;
             case S.TimeOfDay tod:
