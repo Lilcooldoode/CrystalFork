@@ -293,6 +293,7 @@ public class BaseAI
         Point current;
         while (true)
         {
+            Client.ProcessMapExpRateInterval();
             if (Client.IsProcessingNpc)
             {
                 await Task.Delay(WalkDelay);

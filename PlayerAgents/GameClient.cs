@@ -167,6 +167,22 @@ public sealed partial class GameClient
         }
     }
 
+    public void ProcessMapExpRateInterval()
+    {
+        if (string.IsNullOrEmpty(_currentMapFile)) return;
+        if (_mapStartTime == DateTime.MinValue) return;
+        var elapsed = DateTime.UtcNow - _mapStartTime;
+        if (elapsed >= TimeSpan.FromMinutes(15))
+        {
+            if (_mapStartClass != null)
+            {
+                double rate = _mapExpGained / elapsed.TotalHours;
+                _expRateMemory.AddRate(_currentMapFile, _mapStartClass.Value, _mapStartLevel, rate);
+            }
+            StartMapExpTracking(_currentMapFile);
+        }
+    }
+
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));
 
     public int GetCurrentBagWeight()
