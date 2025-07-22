@@ -72,11 +72,12 @@ public sealed partial class GameClient
     private bool _skipNextGoods;
     public bool IsProcessingNpc => _dialogNpcId.HasValue;
 
+    private NPCInteraction? _npcInteraction;
+
     private readonly Dictionary<ulong, (NpcEntry entry, ItemType type)> _pendingSellChecks = new();
     private readonly Dictionary<ulong, (NpcEntry entry, ItemType type)> _pendingRepairChecks = new();
 
-    private S.NPCResponse? _queuedNpcResponse;
-    private CancellationTokenSource? _npcResponseCts;
+    private TaskCompletionSource<S.NPCResponse>? _npcResponseTcs;
     private const int NpcResponseDebounceMs = 100;
 
 
@@ -326,9 +327,18 @@ public sealed partial class GameClient
         {
             if (item == null || item.Info == null) continue;
             if (seen.Contains(item.Info.Type)) continue;
+            seen.Add(item.Info.Type);
             _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
             Console.WriteLine($"I am selling {item.Info.FriendlyName} to {entry.Name}");
             await SendAsync(new C.SellItem { UniqueID = item.UniqueID, Count = 1 });
+            try
+            {
+                using var cts = new CancellationTokenSource(2000);
+                await WaitForLatestNpcResponseAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
             await Task.Delay(100);
         }
     }
@@ -347,8 +357,32 @@ public sealed partial class GameClient
             _pendingRepairChecks[item.UniqueID] = (entry, item.Info.Type);
             Console.WriteLine($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
             await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+            try
+            {
+                using var cts = new CancellationTokenSource(2000);
+                await WaitForLatestNpcResponseAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
             await Task.Delay(100);
         }
+    }
+
+    private async Task HandleNpcSellAsync(NpcEntry entry)
+    {
+        _processingNpcAction = true;
+        await DetermineSellTypesAsync(entry);
+        _processingNpcAction = false;
+        ProcessNpcActionQueue();
+    }
+
+    private async Task HandleNpcRepairAsync(NpcEntry entry)
+    {
+        _processingNpcAction = true;
+        await DetermineRepairTypesAsync(entry);
+        _processingNpcAction = false;
+        ProcessNpcActionQueue();
     }
 
     private void ProcessNpcGoods(IEnumerable<UserItem> goods, PanelType type)
@@ -387,6 +421,7 @@ public sealed partial class GameClient
             !_processingNpcAction)
         {
             _dialogNpcId = null;
+            _npcInteraction = null;
             ProcessNextNpcInQueue();
         }
     }
@@ -406,7 +441,7 @@ public sealed partial class GameClient
 
     private async void ProcessNpcActionQueue()
     {
-        if (_processingNpcAction || !_dialogNpcId.HasValue) return;
+        if (_processingNpcAction || !_dialogNpcId.HasValue || _npcInteraction == null) return;
         if (_pendingSellChecks.Count > 0 || _pendingRepairChecks.Count > 0) return;
 
         if (_npcActionKeys.Count == 0)
@@ -417,30 +452,107 @@ public sealed partial class GameClient
 
         var key = _npcActionKeys.Dequeue();
         _processingNpcAction = true;
-        if (!_dialogNpcId.HasValue)
-        {
-            _processingNpcAction = false;
-            return;
-        }
-        var npcId = _dialogNpcId.Value;
-        await SendAsync(new C.CallNPC { ObjectID = npcId, Key = "[@Main]" });
-        await Task.Delay(50);
-        if (!_dialogNpcId.HasValue || _dialogNpcId.Value != npcId)
-        {
-            _processingNpcAction = false;
-            return;
-        }
-        await SendAsync(new C.CallNPC { ObjectID = npcId, Key = $"[{key}]" });
+        var page = await _npcInteraction.SelectFromMainAsync(key);
+        if (_npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
+            HandleNpcDialogPage(page, entry);
+        _processingNpcAction = false;
     }
 
-    private void StartNpcInteraction(uint id, NpcEntry entry)
+    private async void StartNpcInteraction(uint id, NpcEntry entry)
     {
         _dialogNpcId = id;
         _npcInteractionStart = DateTime.UtcNow;
         _npcActionKeys.Clear();
         _processingNpcAction = false;
         Console.WriteLine($"I am speaking with NPC {entry.Name}");
-        _ = SendAsync(new C.CallNPC { ObjectID = id, Key = "[@Main]" });
+        _npcInteraction = new NPCInteraction(this, id);
+        var page = await _npcInteraction.BeginAsync();
+        HandleNpcDialogPage(page, entry);
+    }
+
+    private void HandleNpcDialogPage(NpcDialogPage page, NpcEntry entry)
+    {
+        var keyList = page.Buttons.Select(b => b.Key).ToList();
+        var keys = new HashSet<string>(keyList.Select(k => k.ToUpper()));
+
+        bool changed = false;
+
+        bool hasBuy = keys.Overlaps(new[] { "@BUY", "@BUYSELL", "@BUYNEW", "@BUYSELLNEW", "@PEARLBUY" });
+        bool hasSell = keys.Overlaps(new[] { "@SELL", "@BUYSELL", "@BUYSELLNEW" });
+        bool hasRepair = keys.Overlaps(new[] { "@REPAIR", "@SREPAIR" });
+
+        string? buyKey = null;
+        string? sellKey = null;
+        string? repairKey = null;
+
+        if (hasBuy)
+        {
+            if (!entry.CanBuy)
+            {
+                entry.CanBuy = true;
+                changed = true;
+            }
+            if (entry.BuyItemIndexes == null)
+            {
+                string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
+                buyKey = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
+                if (buyKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+                {
+                    _skipNextGoods = true;
+                    buyKey = null;
+                }
+            }
+        }
+
+        if (hasSell)
+        {
+            if (!entry.CanSell)
+            {
+                entry.CanSell = true;
+                changed = true;
+            }
+            if (entry.SellItemTypes == null && entry.CannotSellItemTypes == null)
+            {
+                string[] sellKeys = { "@BUYSELLNEW", "@BUYSELL", "@SELL" };
+                sellKey = keyList.FirstOrDefault(k => sellKeys.Contains(k.ToUpper())) ?? "@SELL";
+                if (sellKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+                {
+                    _skipNextGoods = true;
+                    sellKey = null;
+                }
+            }
+        }
+
+        if (hasRepair)
+        {
+            if (!entry.CanRepair)
+            {
+                entry.CanRepair = true;
+                changed = true;
+            }
+            if (entry.RepairItemTypes == null && entry.CannotRepairItemTypes == null)
+            {
+                string[] repairKeys = { "@SREPAIR", "@REPAIR" };
+                repairKey = keyList.FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
+                if (repairKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+                {
+                    _skipNextGoods = true;
+                    repairKey = null;
+                }
+            }
+        }
+
+        if (buyKey != null && !_npcActionKeys.Contains(buyKey))
+            _npcActionKeys.Enqueue(buyKey);
+        if (sellKey != null && !_npcActionKeys.Contains(sellKey))
+            _npcActionKeys.Enqueue(sellKey);
+        if (repairKey != null && !_npcActionKeys.Contains(repairKey))
+            _npcActionKeys.Enqueue(repairKey);
+
+        if (changed)
+            _npcMemory.SaveChanges();
+
+        ProcessNpcActionQueue();
     }
 
     private void CheckNpcInteractionTimeout()
