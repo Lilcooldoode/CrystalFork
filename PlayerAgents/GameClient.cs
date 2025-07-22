@@ -60,6 +60,7 @@ public partial class GameClient
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
 
+
     // Use a dictionary for faster lookups by item index
     public static readonly Dictionary<int, ItemInfo> ItemInfoDict = new();
 
@@ -279,4 +280,5 @@ public partial class GameClient
         _awaitingHarvest = false;
         _harvestTargetId = null;
     }
+
 }

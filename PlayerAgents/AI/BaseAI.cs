@@ -42,8 +42,9 @@ public class BaseAI
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
 
-    private readonly Dictionary<uint, DateTime> _itemRetryTimes = new();
+    private readonly Dictionary<(Point Location, string Name), DateTime> _itemRetryTimes = new();
     private static readonly TimeSpan ItemRetryDelay = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DroppedItemRetryDelay = TimeSpan.FromMinutes(5);
 
     protected virtual int GetItemScore(UserItem item, EquipmentSlot slot)
     {
@@ -196,7 +197,7 @@ public class BaseAI
             }
             else if (obj.Type == ObjectType.Item)
             {
-                if (_itemRetryTimes.TryGetValue(obj.Id, out var retry) && DateTime.UtcNow < retry)
+                if (_itemRetryTimes.TryGetValue((obj.Location, obj.Name), out var retry) && DateTime.UtcNow < retry)
                     continue;
                 int dist = Functions.MaxDistance(current, obj.Location);
                 if (dist < itemDist)
@@ -334,12 +335,15 @@ public class BaseAI
             if (Client.GetCurrentBagWeight() > Client.GetMaxBagWeight() && Client.LastPickedItem != null)
             {
                 Console.WriteLine("Overweight detected, dropping last picked item");
-                await Client.DropItemAsync(Client.LastPickedItem);
+                var drop = Client.LastPickedItem;
+                await Client.DropItemAsync(drop);
+                if (drop?.Info != null)
+                    _itemRetryTimes[(Client.CurrentLocation, drop.Info.FriendlyName)] = DateTime.UtcNow + DroppedItemRetryDelay;
             }
 
-            foreach (var id in _itemRetryTimes.Keys.ToList())
-                if (!Client.TrackedObjects.ContainsKey(id))
-                    _itemRetryTimes.Remove(id);
+            foreach (var kv in _itemRetryTimes.ToList())
+                if (DateTime.UtcNow >= kv.Value)
+                    _itemRetryTimes.Remove(kv.Key);
 
             var map = Client.CurrentMap;
             if (map == null || !Client.IsMapLoaded)
@@ -393,7 +397,7 @@ public class BaseAI
                         {
                             await Client.PickUpAsync();
                         }
-                        _itemRetryTimes[closest.Id] = DateTime.UtcNow + ItemRetryDelay;
+                        _itemRetryTimes[(closest.Location, closest.Name)] = DateTime.UtcNow + ItemRetryDelay;
                         _currentTarget = null;
                     }
                 }
