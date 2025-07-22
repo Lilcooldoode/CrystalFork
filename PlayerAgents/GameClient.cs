@@ -400,9 +400,20 @@ public partial class GameClient
 
         var key = _npcActionKeys.Dequeue();
         _processingNpcAction = true;
-        await SendAsync(new C.CallNPC { ObjectID = _dialogNpcId.Value, Key = "[@Main]" });
+        if (!_dialogNpcId.HasValue)
+        {
+            _processingNpcAction = false;
+            return;
+        }
+        var npcId = _dialogNpcId.Value;
+        await SendAsync(new C.CallNPC { ObjectID = npcId, Key = "[@Main]" });
         await Task.Delay(50);
-        await SendAsync(new C.CallNPC { ObjectID = _dialogNpcId.Value, Key = $"[{key}]" });
+        if (!_dialogNpcId.HasValue || _dialogNpcId.Value != npcId)
+        {
+            _processingNpcAction = false;
+            return;
+        }
+        await SendAsync(new C.CallNPC { ObjectID = npcId, Key = $"[{key}]" });
     }
 
     private void StartNpcInteraction(uint id, NpcEntry entry)
