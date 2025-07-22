@@ -43,6 +43,7 @@ public sealed partial class GameClient
 
     private void DeliverNpcResponse(S.NPCResponse response)
     {
+        if (response.Page.Count == 0) return;
         _queuedNpcResponse = response;
         _npcResponseCts?.Cancel();
         var cts = new CancellationTokenSource();
