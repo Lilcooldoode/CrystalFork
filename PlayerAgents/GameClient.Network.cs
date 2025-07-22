@@ -187,15 +187,10 @@ public sealed partial class GameClient
                     var entry = _npcMemory.AddNpc(on.Name, mapId, on.Location);
                     _npcEntries[on.ObjectID] = entry;
 
-                    if (_dialogNpcId.HasValue)
-                    {
-                        if (!_npcQueue.Contains(on.ObjectID))
-                            _npcQueue.Enqueue(on.ObjectID);
-                    }
-                    else
-                    {
-                        StartNpcInteraction(on.ObjectID, entry);
-                    }
+                    if (!_npcQueue.Contains(on.ObjectID))
+                        _npcQueue.Enqueue(on.ObjectID);
+                    if (!_dialogNpcId.HasValue)
+                        ProcessNextNpcInQueue();
                 }
                 break;
             case S.ObjectItem oi:
