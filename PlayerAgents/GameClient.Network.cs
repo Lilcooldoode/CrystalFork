@@ -683,11 +683,5 @@ public sealed partial class GameClient
             }
             _pendingRepairChecks.Remove(kv.Key);
         }
-
-        if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
-        {
-            _processingNpcAction = false;
-            ProcessNpcActionQueue();
-        }
     }
 }

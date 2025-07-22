@@ -452,17 +452,7 @@ public sealed partial class GameClient
 
         var key = _npcActionKeys.Dequeue();
         _processingNpcAction = true;
-        if (!_dialogNpcId.HasValue)
-        {
-            _processingNpcAction = false;
-            return;
-        }
         var page = await _npcInteraction.SelectFromMainAsync(key);
-        if (!_dialogNpcId.HasValue)
-        {
-            _processingNpcAction = false;
-            return;
-        }
         if (_npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
             HandleNpcDialogPage(page, entry);
         _processingNpcAction = false;
@@ -552,11 +542,11 @@ public sealed partial class GameClient
             }
         }
 
-        if (buyKey != null)
+        if (buyKey != null && !_npcActionKeys.Contains(buyKey))
             _npcActionKeys.Enqueue(buyKey);
-        if (sellKey != null)
+        if (sellKey != null && !_npcActionKeys.Contains(sellKey))
             _npcActionKeys.Enqueue(sellKey);
-        if (repairKey != null)
+        if (repairKey != null && !_npcActionKeys.Contains(repairKey))
             _npcActionKeys.Enqueue(repairKey);
 
         if (changed)
