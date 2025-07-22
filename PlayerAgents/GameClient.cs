@@ -14,6 +14,8 @@ public partial class GameClient
 {
     private readonly Config _config;
     private readonly NpcMemoryBank _npcMemory;
+    private readonly MapMovementMemoryBank _movementMemory;
+    private bool _suppressNextMovement;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private long _pingTime;
@@ -105,10 +107,11 @@ public partial class GameClient
     public int HP => _hp;
     public int MP => _mp;
 
-    public GameClient(Config config, NpcMemoryBank npcMemory)
+    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory)
     {
         _config = config;
         _npcMemory = npcMemory;
+        _movementMemory = movementMemory;
     }
 
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));

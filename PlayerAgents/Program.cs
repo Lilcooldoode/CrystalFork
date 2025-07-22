@@ -74,9 +74,12 @@ internal class Program
             }
 
             var npcFile = Path.Combine(AppContext.BaseDirectory, "npc_memory.json");
-            var memoryBank = new NpcMemoryBank(npcFile);
+            var npcMemory = new NpcMemoryBank(npcFile);
 
-            var client = new GameClient(config, memoryBank);
+            var moveFile = Path.Combine(AppContext.BaseDirectory, "movement_memory.json");
+            var movementMemory = new MapMovementMemoryBank(moveFile);
+
+            var client = new GameClient(config, npcMemory, movementMemory);
             await client.ConnectAsync();
             await client.LoginAsync();
 

@@ -113,11 +113,27 @@ public partial class GameClient
             case S.StartGameDelay delay:
                 Console.WriteLine($"StartGame delayed for {delay.Milliseconds} ms");
                 break;
+            case S.ObjectTeleportOut oto:
+                if (oto.ObjectID == _objectId)
+                    _suppressNextMovement = true;
+                break;
+            case S.ObjectTeleportIn oti:
+                if (oti.ObjectID == _objectId)
+                    _suppressNextMovement = true;
+                break;
+            case S.TeleportIn:
+                _suppressNextMovement = true;
+                break;
             case S.MapInformation mi:
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mi.FileName + ".map");
                 _ = LoadMapAsync();
                 break;
             case S.MapChanged mc:
+                if (!string.IsNullOrEmpty(_currentMapFile) && !_suppressNextMovement && !_dead)
+                {
+                    _movementMemory.AddMovement(_currentMapFile, _currentLocation, mc.FileName, mc.Location);
+                }
+                _suppressNextMovement = false;
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentLocation = mc.Location;
                 _trackedObjects.Clear();
@@ -485,6 +501,7 @@ public partial class GameClient
             try
             {
                 _npcMemory.CheckForUpdates();
+                _movementMemory.CheckForUpdates();
                 await SendAsync(new C.KeepAlive { Time = Environment.TickCount64 });
             }
             catch (Exception ex)
