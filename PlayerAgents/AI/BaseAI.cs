@@ -249,12 +249,12 @@ public class BaseAI
         return obstacles;
     }
 
-    private async Task<List<Point>> FindPathAsync(PlayerAgents.Map.MapData map, Point start, Point dest, uint ignoreId = 0)
+    private async Task<List<Point>> FindPathAsync(PlayerAgents.Map.MapData map, Point start, Point dest, uint ignoreId = 0, int radius = 1)
     {
         try
         {
             var obstacles = BuildObstacles(ignoreId);
-            return await PlayerAgents.Map.PathFinder.FindPathAsync(map, start, dest, obstacles);
+            return await PlayerAgents.Map.PathFinder.FindPathAsync(map, start, dest, obstacles, radius);
         }
         catch
         {
@@ -404,7 +404,7 @@ public class BaseAI
                 {
                     if (distance > 0)
                     {
-                        var path = await FindPathAsync(map, current, closest.Location, closest.Id);
+                        var path = await FindPathAsync(map, current, closest.Location, closest.Id, 0);
                         await MoveAlongPathAsync(path, closest.Location, current);
                     }
                     else

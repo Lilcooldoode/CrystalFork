@@ -10,17 +10,17 @@ public static class PathFinder
     private readonly record struct Node(Point Point, int G, int F);
     public readonly record struct MapPoint(string MapFile, Point Location);
 
-    public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null)
+    public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null, int radius = 1)
     {
-        return await Task.Run(() => FindPath(map, start, end, obstacles));
+        return await Task.Run(() => FindPath(map, start, end, obstacles, radius));
     }
 
-    private static List<Point> FindPath(MapData map, Point start, Point end, ISet<Point>? obstacles)
+    private static List<Point> FindPath(MapData map, Point start, Point end, ISet<Point>? obstacles, int radius)
     {
         int width = map.Width;
         int height = map.Height;
 
-        if (start == end)
+        if (Functions.MaxDistance(start, end) <= radius)
             return new List<Point> { start };
 
         if (width == 0 || height == 0)
@@ -41,7 +41,7 @@ public static class PathFinder
         while (open.Count > 0)
         {
             var current = open.Dequeue().Point;
-            if (current == end)
+            if (Functions.MaxDistance(current, end) <= radius)
                 return ReconstructPath(cameFrom, current);
 
             if (++steps > maxSteps)
@@ -83,7 +83,7 @@ public static class PathFinder
     }
 
     public static async Task<List<MapPoint>> FindPathAsync(MapMovementMemoryBank movements,
-        string startMapFile, Point start, string endMapFile, Point end, ISet<Point>? obstacles = null)
+        string startMapFile, Point start, string endMapFile, Point end, ISet<Point>? obstacles = null, int radius = 1)
     {
         // normalize map names for memory lookup
         var startMap = Path.GetFileNameWithoutExtension(startMapFile);
@@ -92,7 +92,7 @@ public static class PathFinder
         if (startMap == destMap)
         {
             var data = await MapManager.GetMapAsync(startMapFile);
-            var path = await FindPathAsync(data, start, end, obstacles);
+            var path = await FindPathAsync(data, start, end, obstacles, radius);
             var result = new List<MapPoint>(path.Count);
             foreach (var p in path)
                 result.Add(new MapPoint(startMapFile, p));
@@ -137,7 +137,7 @@ public static class PathFinder
         foreach (var edge in edgePath)
         {
             var exitPoint = new Point(edge.SourceX, edge.SourceY);
-            var partial = await FindPathAsync(currentMapData, currentPoint, exitPoint, obstacles);
+            var partial = await FindPathAsync(currentMapData, currentPoint, exitPoint, obstacles, 0);
             if (partial.Count == 0)
                 return new List<MapPoint>();
             for (int i = 0; i < partial.Count - 1; i++)
@@ -150,7 +150,7 @@ public static class PathFinder
             obstacles = null; // only respect obstacles on first map
         }
 
-        var finalPartial = await FindPathAsync(currentMapData, currentPoint, end, obstacles);
+        var finalPartial = await FindPathAsync(currentMapData, currentPoint, end, obstacles, radius);
         if (finalPartial.Count == 0)
             return new List<MapPoint>();
         foreach (var p in finalPartial)
