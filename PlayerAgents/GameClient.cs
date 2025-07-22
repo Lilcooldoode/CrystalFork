@@ -15,6 +15,7 @@ public partial class GameClient
     private readonly Config _config;
     private readonly NpcMemoryBank _npcMemory;
     private readonly MapMovementMemoryBank _movementMemory;
+    private readonly MapExpRateMemoryBank _expRateMemory;
     private bool _suppressNextMovement;
     private TcpClient? _client;
     private NetworkStream? _stream;
@@ -34,6 +35,7 @@ public partial class GameClient
 
     private MirGender _gender;
     private ushort _level;
+    private long _experience;
     private int _hp;
     private int _mp;
     private UserItem[]? _inventory;
@@ -48,6 +50,12 @@ public partial class GameClient
 
     private DateTime _lastMoveTime = DateTime.MinValue;
     private bool _canRun;
+
+    private DateTime _mapStartTime = DateTime.MinValue;
+    private long _mapStartExp;
+    private ushort _mapStartLevel;
+    private MirClass? _mapStartClass;
+    private long _mapExpGained;
 
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
@@ -107,11 +115,36 @@ public partial class GameClient
     public int HP => _hp;
     public int MP => _mp;
 
-    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory)
+    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory)
     {
         _config = config;
         _npcMemory = npcMemory;
         _movementMemory = movementMemory;
+        _expRateMemory = expRateMemory;
+    }
+
+    private void StartMapExpTracking(string mapFile)
+    {
+        _mapStartTime = DateTime.UtcNow;
+        _mapStartExp = _experience;
+        _mapExpGained = 0;
+        _mapStartLevel = _level;
+        _mapStartClass = _playerClass;
+    }
+
+    private void FinalizeMapExpRate()
+    {
+        if (string.IsNullOrEmpty(_currentMapFile)) return;
+        if (_mapStartTime == DateTime.MinValue) return;
+        var elapsed = DateTime.UtcNow - _mapStartTime;
+        if (elapsed >= TimeSpan.FromHours(1))
+        {
+            if (_mapStartClass != null)
+            {
+                double rate = _mapExpGained / elapsed.TotalHours;
+                _expRateMemory.AddRate(_currentMapFile, _mapStartClass.Value, _mapStartLevel, rate);
+            }
+        }
     }
 
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));

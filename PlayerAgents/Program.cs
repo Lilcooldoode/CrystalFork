@@ -79,7 +79,10 @@ internal class Program
             var moveFile = Path.Combine(AppContext.BaseDirectory, "movement_memory.json");
             var movementMemory = new MapMovementMemoryBank(moveFile);
 
-            var client = new GameClient(config, npcMemory, movementMemory);
+            var expRateFile = Path.Combine(AppContext.BaseDirectory, "exp_rate_memory.json");
+            var expRateMemory = new MapExpRateMemoryBank(expRateFile);
+
+            var client = new GameClient(config, npcMemory, movementMemory, expRateMemory);
             await client.ConnectAsync();
             await client.LoginAsync();
 
