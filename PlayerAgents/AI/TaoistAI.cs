@@ -1,6 +1,6 @@
 using Shared;
 
-public class TaoistAI : BaseAI
+public sealed class TaoistAI : BaseAI
 {
     public TaoistAI(GameClient client) : base(client) { }
 

@@ -1,6 +1,6 @@
 using Shared;
 
-public class WarriorAI : BaseAI
+public sealed class WarriorAI : BaseAI
 {
     public WarriorAI(GameClient client) : base(client) { }
 
@@ -16,7 +16,7 @@ public class WarriorAI : BaseAI
                  + item.AddedStats[Stat.MinDC] + item.AddedStats[Stat.MaxDC]
                  + item.Info.Stats[Stat.AttackSpeed] + item.AddedStats[Stat.AttackSpeed]
                  + item.Info.Stats[Stat.Accuracy] + item.AddedStats[Stat.Accuracy]
-                 + item.Info.Stats[Stat.Agility] + item.AddedStats[Stat.Agility]; ;
+                 + item.Info.Stats[Stat.Agility] + item.AddedStats[Stat.Agility];
         }
 
         return item.Info.Stats[Stat.MinAC] + item.Info.Stats[Stat.MaxAC]

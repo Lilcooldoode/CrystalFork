@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using Shared;
 
-public class TrackedObject
+public sealed class TrackedObject
 {
     public uint Id { get; }
     public ObjectType Type { get; }

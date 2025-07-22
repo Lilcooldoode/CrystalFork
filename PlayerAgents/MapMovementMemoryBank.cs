@@ -4,7 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 
-public class MapMovementEntry
+public sealed class MapMovementEntry
 {
     public string SourceMap { get; set; } = string.Empty;
     public int SourceX { get; set; }
@@ -14,7 +14,7 @@ public class MapMovementEntry
     public int DestinationY { get; set; }
 }
 
-public class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
+public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
 {
     public MapMovementMemoryBank(string path) : base(path, "Global\\MapMovementMemoryBankMutex")
     {

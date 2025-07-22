@@ -6,12 +6,7 @@ namespace PlayerAgents.Map;
 
 public static class PathFinder
 {
-    private struct Node
-    {
-        public Point Point;
-        public int G;
-        public int F;
-    }
+    private readonly record struct Node(Point Point, int G, int F);
 
     public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null)
     {
@@ -32,7 +27,7 @@ public static class PathFinder
         var cameFrom = new Dictionary<Point, Point>();
         var gScore = new Dictionary<Point, int>();
         gScore[start] = 0;
-        open.Enqueue(new Node { Point = start, G = 0, F = Heuristic(start, end) }, Heuristic(start, end));
+        open.Enqueue(new Node(start, 0, Heuristic(start, end)), Heuristic(start, end));
         var directions = new[]
         {
             new Point(0,-1), new Point(1,0), new Point(0,1), new Point(-1,0),
@@ -60,7 +55,7 @@ public static class PathFinder
                 cameFrom[neighbor] = current;
                 gScore[neighbor] = tentative;
                 int f = tentative + Heuristic(neighbor, end);
-                open.Enqueue(new Node { Point = neighbor, G = tentative, F = f }, f);
+                open.Enqueue(new Node(neighbor, tentative, f), f);
             }
         }
         return new List<Point>();

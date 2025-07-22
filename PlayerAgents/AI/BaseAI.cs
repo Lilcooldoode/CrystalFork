@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 public class BaseAI
 {
     protected readonly GameClient Client;
-    protected readonly Random Random = new();
+    protected static readonly Random Random = new();
     private TrackedObject? _currentTarget;
     private Point? _searchDestination;
     private DateTime _nextTargetSwitchTime = DateTime.MinValue;

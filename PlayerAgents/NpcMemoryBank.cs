@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using Shared;
 
-public class NpcEntry
+public sealed class NpcEntry
 {
     public string Name { get; set; } = string.Empty;
     public string MapFile { get; set; } = string.Empty;
@@ -21,7 +21,7 @@ public class NpcEntry
     public List<ItemType>? CannotRepairItemTypes { get; set; }
 }
 
-public class NpcMemoryBank : MemoryBankBase<NpcEntry>
+public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>
 {
     public NpcMemoryBank(string path) : base(path, "Global\\NpcMemoryBankMutex")
     {

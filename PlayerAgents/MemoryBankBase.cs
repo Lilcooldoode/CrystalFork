@@ -62,11 +62,7 @@ public abstract class MemoryBankBase<TEntry>
         try
         {
             string tmp = _path + ".tmp";
-            using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
-            using (var sw = new StreamWriter(fs))
-            {
-                sw.Write(json);
-            }
+            File.WriteAllText(tmp, json);
             if (File.Exists(_path))
                 File.Replace(tmp, _path, null);
             else

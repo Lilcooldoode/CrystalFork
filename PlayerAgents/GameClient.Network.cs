@@ -10,7 +10,7 @@ using C = ClientPackets;
 using S = ServerPackets;
 using PlayerAgents.Map;
 
-public partial class GameClient
+public sealed partial class GameClient
 {
     private async Task SendAsync(Packet p)
     {
@@ -29,8 +29,8 @@ public partial class GameClient
                 int count = await _stream.ReadAsync(_buffer, 0, _buffer.Length);
                 if (count == 0) break;
                 var tmp = new byte[_rawData.Length + count];
-                Buffer.BlockCopy(_rawData, 0, tmp, 0, _rawData.Length);
-                Buffer.BlockCopy(_buffer, 0, tmp, _rawData.Length, count);
+                Array.Copy(_rawData, tmp, _rawData.Length);
+                Array.Copy(_buffer, 0, tmp, _rawData.Length, count);
                 _rawData = tmp;
 
                 Packet? p;
@@ -148,6 +148,7 @@ public partial class GameClient
             case S.UserInformation info:
                 _objectId = info.ObjectID;
                 _playerClass = info.Class;
+                _baseStats = new BaseStats(info.Class);
                 _playerName = info.Name;
                 _currentLocation = info.Location;
                 _gender = info.Gender;

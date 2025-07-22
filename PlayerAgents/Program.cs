@@ -3,12 +3,12 @@ using System.IO;
 using ClientPackets;
 using Shared;
 
-public class Config
+public sealed class Config
 {
-    public string ServerIP { get; set; } = "127.0.0.1";
-    public int ServerPort { get; set; } = 7000;
-    public string AccountID { get; set; } = "";
-    public string Password { get; set; } = "";
+    public string ServerIP { get; init; } = "127.0.0.1";
+    public int ServerPort { get; init; } = 7000;
+    public string AccountID { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
     public string CharacterName { get; set; } = string.Empty;
 }
 

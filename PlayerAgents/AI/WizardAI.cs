@@ -1,6 +1,6 @@
 using Shared;
 
-public class WizardAI : BaseAI
+public sealed class WizardAI : BaseAI
 {
     public WizardAI(GameClient client) : base(client) { }
 

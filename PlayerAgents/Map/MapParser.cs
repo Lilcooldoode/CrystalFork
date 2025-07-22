@@ -15,7 +15,7 @@ internal static class MapParser
             Doors = doors;
         }
     }
-    public static byte FindType(byte[] bytes)
+    public static byte FindType(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length < 4) return 0;
         if (bytes[2] == 0x43 && bytes[3] == 0x23) return 100;

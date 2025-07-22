@@ -1,6 +1,6 @@
 using Shared;
 
-public class AssassinAI : BaseAI
+public sealed class AssassinAI : BaseAI
 {
     public AssassinAI(GameClient client) : base(client) { }
 

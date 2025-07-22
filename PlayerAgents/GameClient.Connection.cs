@@ -4,11 +4,11 @@ using System.IO;
 using C = ClientPackets;
 using S = ServerPackets;
 
-public partial class GameClient
+public sealed partial class GameClient
 {
     public async Task ConnectAsync()
     {
-        _client = new TcpClient();
+        _client = new TcpClient { NoDelay = true };
         await _client.ConnectAsync(_config.ServerIP, _config.ServerPort);
         _stream = _client.GetStream();
         Console.WriteLine("Connected to server");

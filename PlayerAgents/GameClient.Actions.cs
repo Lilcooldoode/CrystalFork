@@ -2,7 +2,7 @@ using System;
 using System.Drawing;
 using C = ClientPackets;
 
-public partial class GameClient
+public sealed partial class GameClient
 {
     public async Task WalkAsync(MirDirection direction)
     {
@@ -64,14 +64,13 @@ public partial class GameClient
     public bool CanRun(MirDirection direction)
     {
         if (!_canRun) return false;
-        if (DateTime.UtcNow - _lastMoveTime > TimeSpan.FromMilliseconds(900)) return false;
+        var now = DateTime.UtcNow;
+        if (now - _lastMoveTime > TimeSpan.FromMilliseconds(900)) return false;
 
         var first = Functions.PointMove(_currentLocation, direction, 1);
         var second = Functions.PointMove(_currentLocation, direction, 2);
 
-        if (IsCellBlocked(first) || IsCellBlocked(second)) return false;
-
-        return true;
+        return !(IsCellBlocked(first) || IsCellBlocked(second));
     }
 
     public async Task AttackAsync(MirDirection direction)
@@ -99,15 +98,8 @@ public partial class GameClient
         await SendAsync(equip);
     }
 
-    private int FindFreeInventorySlot()
-    {
-        if (_inventory == null) return -1;
-        for (int i = 0; i < _inventory.Length; i++)
-        {
-            if (_inventory[i] == null) return i;
-        }
-        return -1;
-    }
+    private int FindFreeInventorySlot() =>
+        _inventory == null ? -1 : Array.FindIndex(_inventory, item => item == null);
 
     public async Task UnequipItemAsync(EquipmentSlot slot)
     {

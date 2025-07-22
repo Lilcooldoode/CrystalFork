@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-public class MapExpRateEntry
+public sealed class MapExpRateEntry
 {
     public string MapFile { get; set; } = string.Empty;
     public MirClass Class { get; set; }
@@ -11,7 +11,7 @@ public class MapExpRateEntry
     public double ExpPerHour { get; set; }
 }
 
-public class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
+public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
 {
     public MapExpRateMemoryBank(string path) : base(path, "Global\\MapExpRateMemoryBankMutex")
     {

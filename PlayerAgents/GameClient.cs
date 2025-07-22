@@ -12,7 +12,7 @@ using S = ServerPackets;
 using Shared;
 using PlayerAgents.Map;
 
-public partial class GameClient
+public sealed partial class GameClient
 {
     private readonly Config _config;
     private readonly NpcMemoryBank _npcMemory;
@@ -26,6 +26,7 @@ public partial class GameClient
     private byte[] _rawData = Array.Empty<byte>();
     private readonly Random _random = new();
     private MirClass? _playerClass;
+    private BaseStats? _baseStats;
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
     private string _playerName = string.Empty;
@@ -183,8 +184,8 @@ public partial class GameClient
     public int GetMaxBagWeight()
     {
         if (_playerClass == null) return int.MaxValue;
-        var stats = new BaseStats(_playerClass.Value);
-        int baseWeight = stats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
+        _baseStats ??= new BaseStats(_playerClass.Value);
+        int baseWeight = _baseStats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
         int extra = 0;
         if (_equipment != null)
         {
@@ -201,8 +202,8 @@ public partial class GameClient
     public int GetMaxHP()
     {
         if (_playerClass == null) return int.MaxValue;
-        var stats = new BaseStats(_playerClass.Value);
-        int baseHP = stats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
+        _baseStats ??= new BaseStats(_playerClass.Value);
+        int baseHP = _baseStats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
         int extra = 0;
         if (_equipment != null)
         {
@@ -219,8 +220,8 @@ public partial class GameClient
     public int GetMaxMP()
     {
         if (_playerClass == null) return int.MaxValue;
-        var stats = new BaseStats(_playerClass.Value);
-        int baseMP = stats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
+        _baseStats ??= new BaseStats(_playerClass.Value);
+        int baseMP = _baseStats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
         int extra = 0;
         if (_equipment != null)
         {
