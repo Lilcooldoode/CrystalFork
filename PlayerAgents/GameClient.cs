@@ -476,11 +476,12 @@ public sealed partial class GameClient
     private Func<Task> CreateBuyTask(string key) => async () =>
     {
         if (_npcInteraction == null) return;
-        await _npcInteraction.SelectFromMainAsync(key);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waitTask = WaitForNpcGoodsAsync(cts.Token);
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitForNpcGoodsAsync(cts.Token);
+            await _npcInteraction.SelectFromMainAsync(key);
+            await waitTask;
         }
         finally
         {
@@ -492,11 +493,12 @@ public sealed partial class GameClient
     private Func<Task> CreateSellTask(string key) => async () =>
     {
         if (_npcInteraction == null) return;
-        await _npcInteraction.SelectFromMainAsync(key);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waitTask = WaitForNpcSellAsync(cts.Token);
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitForNpcSellAsync(cts.Token);
+            await _npcInteraction.SelectFromMainAsync(key);
+            await waitTask;
         }
         finally
         {
@@ -508,11 +510,12 @@ public sealed partial class GameClient
     private Func<Task> CreateRepairTask(string key) => async () =>
     {
         if (_npcInteraction == null) return;
-        await _npcInteraction.SelectFromMainAsync(key);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waitTask = WaitForNpcRepairAsync(cts.Token);
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitForNpcRepairAsync(cts.Token);
+            await _npcInteraction.SelectFromMainAsync(key);
+            await waitTask;
         }
         finally
         {
