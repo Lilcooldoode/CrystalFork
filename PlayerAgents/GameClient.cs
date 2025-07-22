@@ -138,7 +138,7 @@ public partial class GameClient
         if (string.IsNullOrEmpty(_currentMapFile)) return;
         if (_mapStartTime == DateTime.MinValue) return;
         var elapsed = DateTime.UtcNow - _mapStartTime;
-        if (elapsed >= TimeSpan.FromHours(1))
+        if (elapsed >= TimeSpan.FromMinutes(15))
         {
             if (_mapStartClass != null)
             {
