@@ -343,7 +343,17 @@ public class BaseAI
                 var drop = Client.LastPickedItem;
                 await Client.DropItemAsync(drop);
                 if (drop?.Info != null)
-                    _itemRetryTimes[(Client.CurrentLocation, drop.Info.FriendlyName)] = DateTime.UtcNow + DroppedItemRetryDelay;
+                {
+                    // item may spawn on any adjacent cell so ignore all nearby copies
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        for (int dy = -1; dy <= 1; dy++)
+                        {
+                            var loc = new Point(Client.CurrentLocation.X + dx, Client.CurrentLocation.Y + dy);
+                            _itemRetryTimes[(loc, drop.Info.FriendlyName)] = DateTime.UtcNow + DroppedItemRetryDelay;
+                        }
+                    }
+                }
             }
 
             foreach (var kv in _itemRetryTimes.ToList())

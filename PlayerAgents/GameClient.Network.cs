@@ -360,11 +360,7 @@ public partial class GameClient
                 _lastPickedItem = gi.Item;
                 if (gi.Item.Info != null)
                     Console.WriteLine($"Gained item: {gi.Item.Info.FriendlyName}");
-                if (GetCurrentBagWeight() > GetMaxBagWeight())
-                {
-                    Console.WriteLine("Overweight, dropping last item...");
-                    _ = Task.Run(async () => await DropItemAsync(gi.Item));
-                }
+                // Let the AI handle overweight checks so it can track dropped items
                 break;
             case S.GainedGold gg:
                 _gold += gg.Gold;
