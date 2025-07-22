@@ -35,11 +35,20 @@ public abstract class MemoryBankBase<TEntry>
     private void Load()
     {
         List<TEntry>? items = null;
-        if (File.Exists(_path))
+
+        AcquireFileMutex();
+        try
         {
-            using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            items = JsonSerializer.Deserialize<List<TEntry>>(fs);
-            _lastWriteTime = File.GetLastWriteTimeUtc(_path);
+            if (File.Exists(_path))
+            {
+                using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                items = JsonSerializer.Deserialize<List<TEntry>>(fs);
+                _lastWriteTime = File.GetLastWriteTimeUtc(_path);
+            }
+        }
+        finally
+        {
+            _fileMutex.ReleaseMutex();
         }
 
         lock (_lock)
