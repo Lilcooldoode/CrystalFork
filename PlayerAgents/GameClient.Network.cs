@@ -514,11 +514,13 @@ public sealed partial class GameClient
                     }
                     if (npcSellEntry.SellItemTypes == null && npcSellEntry.CannotSellItemTypes == null)
                     {
-                        _ = Task.Run(async () => await HandleNpcSellAsync(npcSellEntry));
+                        _ = Task.Run(async () => { await HandleNpcSellAsync(npcSellEntry); _npcSellTcs?.TrySetResult(true); _npcSellTcs = null; });
                     }
                     else
                     {
                         ProcessNpcActionQueue();
+                        _npcSellTcs?.TrySetResult(true);
+                        _npcSellTcs = null;
                     }
                 }
                 break;
@@ -533,11 +535,13 @@ public sealed partial class GameClient
                     }
                     if (npcRepairEntry.RepairItemTypes == null && npcRepairEntry.CannotRepairItemTypes == null)
                     {
-                        _ = Task.Run(async () => await HandleNpcRepairAsync(npcRepairEntry));
+                        _ = Task.Run(async () => { await HandleNpcRepairAsync(npcRepairEntry); _npcRepairTcs?.TrySetResult(true); _npcRepairTcs = null; });
                     }
                     else
                     {
                         ProcessNpcActionQueue();
+                        _npcRepairTcs?.TrySetResult(true);
+                        _npcRepairTcs = null;
                     }
                 }
                 break;
@@ -596,11 +600,6 @@ public sealed partial class GameClient
                     }
                     _pendingSellChecks.Remove(sell.UniqueID);
                 }
-                if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
-                {
-                    _processingNpcAction = false;
-                    ProcessNpcActionQueue();
-                }
                 break;
             case S.ItemRepaired ir:
                 if (_pendingRepairChecks.TryGetValue(ir.UniqueID, out var infoRep))
@@ -612,11 +611,6 @@ public sealed partial class GameClient
                         _npcMemory.SaveChanges();
                     }
                     _pendingRepairChecks.Remove(ir.UniqueID);
-                }
-                if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
-                {
-                    _processingNpcAction = false;
-                    ProcessNpcActionQueue();
                 }
                 break;
             case S.KeepAlive keep:

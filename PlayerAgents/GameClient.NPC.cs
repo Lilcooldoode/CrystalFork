@@ -67,4 +67,31 @@ public sealed partial class GameClient
             }
         });
     }
+
+    public Task WaitForNpcGoodsAsync(CancellationToken cancellationToken = default)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        _npcGoodsTcs = tcs;
+        if (cancellationToken != default)
+            cancellationToken.Register(() => tcs.TrySetCanceled());
+        return tcs.Task;
+    }
+
+    public Task WaitForNpcSellAsync(CancellationToken cancellationToken = default)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        _npcSellTcs = tcs;
+        if (cancellationToken != default)
+            cancellationToken.Register(() => tcs.TrySetCanceled());
+        return tcs.Task;
+    }
+
+    public Task WaitForNpcRepairAsync(CancellationToken cancellationToken = default)
+    {
+        var tcs = new TaskCompletionSource<bool>();
+        _npcRepairTcs = tcs;
+        if (cancellationToken != default)
+            cancellationToken.Register(() => tcs.TrySetCanceled());
+        return tcs.Task;
+    }
 }

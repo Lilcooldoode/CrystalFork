@@ -66,7 +66,8 @@ public sealed partial class GameClient
     private readonly ConcurrentDictionary<uint, NpcEntry> _npcEntries = new();
     private uint? _dialogNpcId;
     private readonly Queue<uint> _npcQueue = new();
-    private readonly Queue<string> _npcActionKeys = new();
+    private readonly Queue<(string key, Func<Task> action)> _npcActionTasks = new();
+    private readonly HashSet<string> _npcActionTaskKeys = new();
     private bool _processingNpcAction;
     private DateTime _npcInteractionStart;
     private bool _skipNextGoods;
@@ -78,6 +79,9 @@ public sealed partial class GameClient
     private readonly Dictionary<ulong, (NpcEntry entry, ItemType type)> _pendingRepairChecks = new();
 
     private TaskCompletionSource<S.NPCResponse>? _npcResponseTcs;
+    private TaskCompletionSource<bool>? _npcGoodsTcs;
+    private TaskCompletionSource<bool>? _npcSellTcs;
+    private TaskCompletionSource<bool>? _npcRepairTcs;
     private const int NpcResponseDebounceMs = 100;
 
 
@@ -371,17 +375,17 @@ public sealed partial class GameClient
 
     private async Task HandleNpcSellAsync(NpcEntry entry)
     {
-        _processingNpcAction = true;
         await DetermineSellTypesAsync(entry);
-        _processingNpcAction = false;
+        _npcSellTcs?.TrySetResult(true);
+        _npcSellTcs = null;
         ProcessNpcActionQueue();
     }
 
     private async Task HandleNpcRepairAsync(NpcEntry entry)
     {
-        _processingNpcAction = true;
         await DetermineRepairTypesAsync(entry);
-        _processingNpcAction = false;
+        _npcRepairTcs?.TrySetResult(true);
+        _npcRepairTcs = null;
         ProcessNpcActionQueue();
     }
 
@@ -408,8 +412,8 @@ public sealed partial class GameClient
         }
 
         _npcMemory.SaveChanges();
-        _processingNpcAction = false;
-        ProcessNpcActionQueue();
+        _npcGoodsTcs?.TrySetResult(true);
+        _npcGoodsTcs = null;
     }
 
     private void TryFinishNpcInteraction()
@@ -417,7 +421,7 @@ public sealed partial class GameClient
         if (_dialogNpcId.HasValue &&
             _pendingSellChecks.Count == 0 &&
             _pendingRepairChecks.Count == 0 &&
-            _npcActionKeys.Count == 0 &&
+            _npcActionTasks.Count == 0 &&
             !_processingNpcAction)
         {
             _dialogNpcId = null;
@@ -444,31 +448,78 @@ public sealed partial class GameClient
         if (_processingNpcAction || !_dialogNpcId.HasValue || _npcInteraction == null) return;
         if (_pendingSellChecks.Count > 0 || _pendingRepairChecks.Count > 0) return;
 
-        if (_npcActionKeys.Count == 0)
+        if (_npcActionTasks.Count == 0)
         {
             TryFinishNpcInteraction();
             return;
         }
 
-        var key = _npcActionKeys.Dequeue();
+        var item = _npcActionTasks.Dequeue();
+        _npcActionTaskKeys.Remove(item.key);
         _processingNpcAction = true;
-        var page = await _npcInteraction.SelectFromMainAsync(key);
-        if (_npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
-            HandleNpcDialogPage(page, entry);
-        _processingNpcAction = false;
+        await item.action();
     }
 
     private async void StartNpcInteraction(uint id, NpcEntry entry)
     {
         _dialogNpcId = id;
         _npcInteractionStart = DateTime.UtcNow;
-        _npcActionKeys.Clear();
+        _npcActionTasks.Clear();
+        _npcActionTaskKeys.Clear();
         _processingNpcAction = false;
         Console.WriteLine($"I am speaking with NPC {entry.Name}");
         _npcInteraction = new NPCInteraction(this, id);
         var page = await _npcInteraction.BeginAsync();
         HandleNpcDialogPage(page, entry);
     }
+
+    private Func<Task> CreateBuyTask(string key) => async () =>
+    {
+        if (_npcInteraction == null) return;
+        await _npcInteraction.SelectFromMainAsync(key);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitForNpcGoodsAsync(cts.Token);
+        }
+        finally
+        {
+            _processingNpcAction = false;
+            ProcessNpcActionQueue();
+        }
+    };
+
+    private Func<Task> CreateSellTask(string key) => async () =>
+    {
+        if (_npcInteraction == null) return;
+        await _npcInteraction.SelectFromMainAsync(key);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitForNpcSellAsync(cts.Token);
+        }
+        finally
+        {
+            _processingNpcAction = false;
+            ProcessNpcActionQueue();
+        }
+    };
+
+    private Func<Task> CreateRepairTask(string key) => async () =>
+    {
+        if (_npcInteraction == null) return;
+        await _npcInteraction.SelectFromMainAsync(key);
+        try
+        {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitForNpcRepairAsync(cts.Token);
+        }
+        finally
+        {
+            _processingNpcAction = false;
+            ProcessNpcActionQueue();
+        }
+    };
 
     private void HandleNpcDialogPage(NpcDialogPage page, NpcEntry entry)
     {
@@ -542,12 +593,21 @@ public sealed partial class GameClient
             }
         }
 
-        if (buyKey != null && !_npcActionKeys.Contains(buyKey))
-            _npcActionKeys.Enqueue(buyKey);
-        if (sellKey != null && !_npcActionKeys.Contains(sellKey))
-            _npcActionKeys.Enqueue(sellKey);
-        if (repairKey != null && !_npcActionKeys.Contains(repairKey))
-            _npcActionKeys.Enqueue(repairKey);
+        if (buyKey != null)
+        {
+            _npcActionTaskKeys.Add(buyKey);
+            _npcActionTasks.Enqueue((buyKey, CreateBuyTask(buyKey)));
+        }
+        if (sellKey != null)
+        {
+            _npcActionTaskKeys.Add(sellKey);
+            _npcActionTasks.Enqueue((sellKey, CreateSellTask(sellKey)));
+        }
+        if (repairKey != null)
+        {
+            _npcActionTaskKeys.Add(repairKey);
+            _npcActionTasks.Enqueue((repairKey, CreateRepairTask(repairKey)));
+        }
 
         if (changed)
             _npcMemory.SaveChanges();
