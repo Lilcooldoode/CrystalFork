@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
-using System.Text.RegularExpressions;
-using System.Threading;
 using System.Threading.Tasks;
 using C = ClientPackets;
 using S = ServerPackets;
@@ -503,7 +501,7 @@ public sealed partial class GameClient
                 }
                 break;
             case S.NPCResponse nr:
-                QueueNpcResponse(nr);
+                DeliverNpcResponse(nr);
                 break;
             case S.NPCGoods goods:
                 ProcessNpcGoods(goods.List, goods.Type);
@@ -618,104 +616,6 @@ public sealed partial class GameClient
         }
     }
 
-    private void QueueNpcResponse(S.NPCResponse nr)
-    {
-        _queuedNpcResponse = nr;
-        _npcResponseCts?.Cancel();
-        var cts = new CancellationTokenSource();
-        _npcResponseCts = cts;
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(NpcResponseDebounceMs, cts.Token);
-                if (!cts.IsCancellationRequested && _queuedNpcResponse != null)
-                {
-                    ProcessNpcResponse(_queuedNpcResponse);
-                    _queuedNpcResponse = null;
-                }
-            }
-            catch (TaskCanceledException)
-            {
-            }
-        });
-    }
-
-    private void ProcessNpcResponse(S.NPCResponse nr)
-    {
-        if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcRespEntry))
-        {
-            string text = string.Join(" ", nr.Page);
-            var matches = Regex.Matches(text, @"<[^<>]*/(@[^>]+)>");
-            var keyList = matches.Cast<Match>().Select(m => m.Groups[1].Value).ToList();
-            var keys = new HashSet<string>(keyList.Select(k => k.ToUpper()));
-
-            bool changed = false;
-
-            bool hasBuy = keys.Overlaps(new[] { "@BUY", "@BUYSELL", "@BUYNEW", "@BUYSELLNEW", "@PEARLBUY" });
-            bool hasSell = keys.Overlaps(new[] { "@SELL", "@BUYSELL", "@BUYSELLNEW" });
-            bool hasRepair = keys.Overlaps(new[] { "@REPAIR", "@SREPAIR" });
-
-            if (hasBuy)
-            {
-                if (!npcRespEntry.CanBuy)
-                {
-                    npcRespEntry.CanBuy = true;
-                    changed = true;
-                }
-                if (npcRespEntry.BuyItemIndexes == null)
-                {
-                    string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
-                    string key = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
-                    if (!key.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
-                        _npcActionKeys.Enqueue(key);
-                    else
-                        _skipNextGoods = true;
-                }
-            }
-
-            if (hasSell)
-            {
-                if (!npcRespEntry.CanSell)
-                {
-                    npcRespEntry.CanSell = true;
-                    changed = true;
-                }
-                if (npcRespEntry.SellItemTypes == null && npcRespEntry.CannotSellItemTypes == null)
-                {
-                    string[] sellKeys = { "@BUYSELLNEW", "@BUYSELL", "@SELL" };
-                    string key = keyList.FirstOrDefault(k => sellKeys.Contains(k.ToUpper())) ?? "@SELL";
-                    if (!key.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
-                        _npcActionKeys.Enqueue(key);
-                    else
-                        _skipNextGoods = true;
-                }
-            }
-
-            if (hasRepair)
-            {
-                if (!npcRespEntry.CanRepair)
-                {
-                    npcRespEntry.CanRepair = true;
-                    changed = true;
-                }
-                if (npcRespEntry.RepairItemTypes == null && npcRespEntry.CannotRepairItemTypes == null)
-                {
-                    string[] repairKeys = { "@SREPAIR", "@REPAIR" };
-                    string key = keyList.FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
-                    if (!key.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
-                        _npcActionKeys.Enqueue(key);
-                    else
-                        _skipNextGoods = true;
-                }
-            }
-
-            if (changed)
-                _npcMemory.SaveChanges();
-
-            ProcessNpcActionQueue();
-        }
-    }
 
     private void HandleTradeFailChat(string text)
     {
