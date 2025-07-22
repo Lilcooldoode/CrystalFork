@@ -5,6 +5,8 @@ using System.Drawing;
 using System.IO;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Threading;
 using C = ClientPackets;
 using S = ServerPackets;
 using Shared;
@@ -59,6 +61,22 @@ public partial class GameClient
 
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
+
+    private readonly ConcurrentDictionary<uint, NpcEntry> _npcEntries = new();
+    private uint? _dialogNpcId;
+    private readonly Queue<uint> _npcQueue = new();
+    private readonly Queue<string> _npcActionKeys = new();
+    private bool _processingNpcAction;
+    private DateTime _npcInteractionStart;
+    private bool _skipNextGoods;
+    public bool IsProcessingNpc => _dialogNpcId.HasValue;
+
+    private readonly Dictionary<ulong, (NpcEntry entry, ItemType type)> _pendingSellChecks = new();
+    private readonly Dictionary<ulong, (NpcEntry entry, ItemType type)> _pendingRepairChecks = new();
+
+    private S.NPCResponse? _queuedNpcResponse;
+    private CancellationTokenSource? _npcResponseCts;
+    private const int NpcResponseDebounceMs = 100;
 
 
     // Use a dictionary for faster lookups by item index
@@ -281,4 +299,131 @@ public partial class GameClient
         _harvestTargetId = null;
     }
 
+    private async Task DetermineSellTypesAsync(NpcEntry entry)
+    {
+        if (_inventory == null) return;
+        var seen = new HashSet<ItemType>();
+        if (entry.SellItemTypes != null) seen.UnionWith(entry.SellItemTypes);
+        if (entry.CannotSellItemTypes != null) seen.UnionWith(entry.CannotSellItemTypes);
+        foreach (var item in _inventory)
+        {
+            if (item == null || item.Info == null) continue;
+            if (seen.Contains(item.Info.Type)) continue;
+            _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
+            Console.WriteLine($"I am selling {item.Info.FriendlyName} to {entry.Name}");
+            await SendAsync(new C.SellItem { UniqueID = item.UniqueID, Count = 1 });
+            await Task.Delay(100);
+        }
+    }
+
+    private async Task DetermineRepairTypesAsync(NpcEntry entry)
+    {
+        if (_inventory == null) return;
+        var seen = new HashSet<ItemType>();
+        if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
+        if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
+        foreach (var item in _inventory)
+        {
+            if (item == null || item.Info == null) continue;
+            if (item.CurrentDura == item.MaxDura) continue;
+            if (seen.Contains(item.Info.Type)) continue;
+            _pendingRepairChecks[item.UniqueID] = (entry, item.Info.Type);
+            Console.WriteLine($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
+            await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+            await Task.Delay(100);
+        }
+    }
+
+    private void ProcessNpcGoods(IEnumerable<UserItem> goods, PanelType type)
+    {
+        if (!_dialogNpcId.HasValue) return;
+        if (!_npcEntries.TryGetValue(_dialogNpcId.Value, out var entry)) return;
+
+        if (_skipNextGoods)
+        {
+            _skipNextGoods = false;
+            return;
+        }
+
+        if (type != PanelType.Buy && type != PanelType.BuySub)
+            return;
+
+        entry.CanBuy = true;
+        entry.BuyItemIndexes ??= new List<int>();
+        foreach (var it in goods)
+        {
+            if (!entry.BuyItemIndexes.Contains(it.ItemIndex))
+                entry.BuyItemIndexes.Add(it.ItemIndex);
+        }
+
+        _npcMemory.SaveChanges();
+        _processingNpcAction = false;
+        ProcessNpcActionQueue();
+    }
+
+    private void TryFinishNpcInteraction()
+    {
+        if (_dialogNpcId.HasValue &&
+            _pendingSellChecks.Count == 0 &&
+            _pendingRepairChecks.Count == 0 &&
+            _npcActionKeys.Count == 0 &&
+            !_processingNpcAction)
+        {
+            _dialogNpcId = null;
+            ProcessNextNpcInQueue();
+        }
+    }
+
+    private void ProcessNextNpcInQueue()
+    {
+        while (_npcQueue.Count > 0)
+        {
+            var id = _npcQueue.Dequeue();
+            if (_npcEntries.TryGetValue(id, out var entry))
+            {
+                StartNpcInteraction(id, entry);
+                break;
+            }
+        }
+    }
+
+    private async void ProcessNpcActionQueue()
+    {
+        if (_processingNpcAction || !_dialogNpcId.HasValue) return;
+        if (_pendingSellChecks.Count > 0 || _pendingRepairChecks.Count > 0) return;
+
+        if (_npcActionKeys.Count == 0)
+        {
+            TryFinishNpcInteraction();
+            return;
+        }
+
+        var key = _npcActionKeys.Dequeue();
+        _processingNpcAction = true;
+        await SendAsync(new C.CallNPC { ObjectID = _dialogNpcId.Value, Key = "[@Main]" });
+        await Task.Delay(50);
+        await SendAsync(new C.CallNPC { ObjectID = _dialogNpcId.Value, Key = $"[{key}]" });
+    }
+
+    private void StartNpcInteraction(uint id, NpcEntry entry)
+    {
+        _dialogNpcId = id;
+        _npcInteractionStart = DateTime.UtcNow;
+        _npcActionKeys.Clear();
+        _processingNpcAction = false;
+        Console.WriteLine($"I am speaking with NPC {entry.Name}");
+        _ = SendAsync(new C.CallNPC { ObjectID = id, Key = "[@Main]" });
+    }
+
+    private void CheckNpcInteractionTimeout()
+    {
+        if (_dialogNpcId.HasValue &&
+            DateTime.UtcNow - _npcInteractionStart > TimeSpan.FromSeconds(10))
+        {
+            _dialogNpcId = null;
+            _pendingSellChecks.Clear();
+            _pendingRepairChecks.Clear();
+            ProcessNextNpcInQueue();
+        }
+    }
 }

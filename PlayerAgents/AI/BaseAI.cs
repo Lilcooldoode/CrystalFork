@@ -293,6 +293,11 @@ public class BaseAI
         Point current;
         while (true)
         {
+            if (Client.IsProcessingNpc)
+            {
+                await Task.Delay(WalkDelay);
+                continue;
+            }
             if (Client.Dead)
             {
                 _currentTarget = null;

@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using C = ClientPackets;
 using S = ServerPackets;
 using PlayerAgents.Map;
@@ -182,7 +185,18 @@ public partial class GameClient
                 if (!string.IsNullOrEmpty(_currentMapFile))
                 {
                     var mapId = Path.GetFileNameWithoutExtension(_currentMapFile);
-                    _npcMemory.AddNpc(on.Name, mapId, on.Location);
+                    var entry = _npcMemory.AddNpc(on.Name, mapId, on.Location);
+                    _npcEntries[on.ObjectID] = entry;
+
+                    if (_dialogNpcId.HasValue)
+                    {
+                        if (!_npcQueue.Contains(on.ObjectID))
+                            _npcQueue.Enqueue(on.ObjectID);
+                    }
+                    else
+                    {
+                        StartNpcInteraction(on.ObjectID, entry);
+                    }
                 }
                 break;
             case S.ObjectItem oi:
@@ -365,8 +379,10 @@ public partial class GameClient
                 _experience = lc.Experience;
                 break;
             case S.Chat chat:
+                HandleTradeFailChat(chat.Message);
                 break;
             case S.ObjectChat oc:
+                HandleTradeFailChat(oc.Text);
                 break;
             case S.LoseGold lg:
                 if (lg.Gold > _gold) _gold = 0;
@@ -489,6 +505,88 @@ public partial class GameClient
                     if (idx >= 0) _equipment[idx] = newItem;
                 }
                 break;
+            case S.NPCResponse nr:
+                QueueNpcResponse(nr);
+                break;
+            case S.NPCGoods goods:
+                ProcessNpcGoods(goods.List, goods.Type);
+                break;
+            case S.NPCPearlGoods pearlGoods:
+                ProcessNpcGoods(pearlGoods.List, pearlGoods.Type);
+                break;
+            case S.NPCSell:
+                if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcSellEntry))
+                {
+                    if (!npcSellEntry.CanSell)
+                    {
+                        npcSellEntry.CanSell = true;
+                        _npcMemory.SaveChanges();
+                    }
+                    if (npcSellEntry.SellItemTypes == null && npcSellEntry.CannotSellItemTypes == null)
+                        _ = Task.Run(async () => await DetermineSellTypesAsync(npcSellEntry));
+                }
+                ProcessNpcActionQueue();
+                break;
+            case S.NPCRepair:
+            case S.NPCSRepair:
+                if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcRepairEntry))
+                {
+                    if (!npcRepairEntry.CanRepair)
+                    {
+                        npcRepairEntry.CanRepair = true;
+                        _npcMemory.SaveChanges();
+                    }
+                    if (npcRepairEntry.RepairItemTypes == null && npcRepairEntry.CannotRepairItemTypes == null)
+                        _ = Task.Run(async () => await DetermineRepairTypesAsync(npcRepairEntry));
+                }
+                ProcessNpcActionQueue();
+                break;
+            case S.SellItem sell:
+                if (_pendingSellChecks.TryGetValue(sell.UniqueID, out var infoSell))
+                {
+                    if (sell.Success)
+                    {
+                        infoSell.entry.SellItemTypes ??= new List<ItemType>();
+                        if (!infoSell.entry.SellItemTypes.Contains(infoSell.type))
+                        {
+                            infoSell.entry.SellItemTypes.Add(infoSell.type);
+                            _npcMemory.SaveChanges();
+                        }
+                    }
+                    else
+                    {
+                        infoSell.entry.CannotSellItemTypes ??= new List<ItemType>();
+                        if (!infoSell.entry.CannotSellItemTypes.Contains(infoSell.type))
+                        {
+                            infoSell.entry.CannotSellItemTypes.Add(infoSell.type);
+                            _npcMemory.SaveChanges();
+                        }
+                    }
+                    _pendingSellChecks.Remove(sell.UniqueID);
+                }
+                if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
+                {
+                    _processingNpcAction = false;
+                    ProcessNpcActionQueue();
+                }
+                break;
+            case S.ItemRepaired ir:
+                if (_pendingRepairChecks.TryGetValue(ir.UniqueID, out var infoRep))
+                {
+                    infoRep.entry.RepairItemTypes ??= new List<ItemType>();
+                    if (!infoRep.entry.RepairItemTypes.Contains(infoRep.type))
+                    {
+                        infoRep.entry.RepairItemTypes.Add(infoRep.type);
+                        _npcMemory.SaveChanges();
+                    }
+                    _pendingRepairChecks.Remove(ir.UniqueID);
+                }
+                if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
+                {
+                    _processingNpcAction = false;
+                    ProcessNpcActionQueue();
+                }
+                break;
             case S.KeepAlive keep:
                 _pingTime = Environment.TickCount64 - keep.Time;
                 break;
@@ -513,12 +611,149 @@ public partial class GameClient
                 _npcMemory.CheckForUpdates();
                 _movementMemory.CheckForUpdates();
                 _expRateMemory.CheckForUpdates();
+                CheckNpcInteractionTimeout();
                 await SendAsync(new C.KeepAlive { Time = Environment.TickCount64 });
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"KeepAlive error: {ex.Message}");
             }
+        }
+    }
+
+    private void QueueNpcResponse(S.NPCResponse nr)
+    {
+        _queuedNpcResponse = nr;
+        _npcResponseCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _npcResponseCts = cts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(NpcResponseDebounceMs, cts.Token);
+                if (!cts.IsCancellationRequested && _queuedNpcResponse != null)
+                {
+                    ProcessNpcResponse(_queuedNpcResponse);
+                    _queuedNpcResponse = null;
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
+    }
+
+    private void ProcessNpcResponse(S.NPCResponse nr)
+    {
+        if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcRespEntry))
+        {
+            string text = string.Join(" ", nr.Page);
+            var matches = Regex.Matches(text, @"<[^<>]*/(@[^>]+)>");
+            var keyList = matches.Cast<Match>().Select(m => m.Groups[1].Value).ToList();
+            var keys = new HashSet<string>(keyList.Select(k => k.ToUpper()));
+
+            bool changed = false;
+
+            bool hasBuy = keys.Overlaps(new[] { "@BUY", "@BUYSELL", "@BUYNEW", "@BUYSELLNEW", "@PEARLBUY" });
+            bool hasSell = keys.Overlaps(new[] { "@SELL", "@BUYSELL", "@BUYSELLNEW" });
+            bool hasRepair = keys.Overlaps(new[] { "@REPAIR", "@SREPAIR" });
+
+            if (hasBuy)
+            {
+                if (!npcRespEntry.CanBuy)
+                {
+                    npcRespEntry.CanBuy = true;
+                    changed = true;
+                }
+                if (npcRespEntry.BuyItemIndexes == null)
+                {
+                    string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
+                    string key = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
+                    if (!key.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+                        _npcActionKeys.Enqueue(key);
+                    else
+                        _skipNextGoods = true;
+                }
+            }
+
+            if (hasSell)
+            {
+                if (!npcRespEntry.CanSell)
+                {
+                    npcRespEntry.CanSell = true;
+                    changed = true;
+                }
+                if (npcRespEntry.SellItemTypes == null && npcRespEntry.CannotSellItemTypes == null)
+                {
+                    string[] sellKeys = { "@BUYSELLNEW", "@BUYSELL", "@SELL" };
+                    string key = keyList.FirstOrDefault(k => sellKeys.Contains(k.ToUpper())) ?? "@SELL";
+                    if (!key.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+                        _npcActionKeys.Enqueue(key);
+                    else
+                        _skipNextGoods = true;
+                }
+            }
+
+            if (hasRepair)
+            {
+                if (!npcRespEntry.CanRepair)
+                {
+                    npcRespEntry.CanRepair = true;
+                    changed = true;
+                }
+                if (npcRespEntry.RepairItemTypes == null && npcRespEntry.CannotRepairItemTypes == null)
+                {
+                    string[] repairKeys = { "@SREPAIR", "@REPAIR" };
+                    string key = keyList.FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
+                    if (!key.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+                        _npcActionKeys.Enqueue(key);
+                    else
+                        _skipNextGoods = true;
+                }
+            }
+
+            if (changed)
+                _npcMemory.SaveChanges();
+
+            ProcessNpcActionQueue();
+        }
+    }
+
+    private void HandleTradeFailChat(string text)
+    {
+        if (_pendingSellChecks.Count > 0 && text.Contains("cannot sell", StringComparison.OrdinalIgnoreCase))
+        {
+            var kv = _pendingSellChecks.First();
+            var entry = kv.Value.entry;
+            var type = kv.Value.type;
+            entry.CannotSellItemTypes ??= new List<ItemType>();
+            if (!entry.CannotSellItemTypes.Contains(type))
+            {
+                entry.CannotSellItemTypes.Add(type);
+                _npcMemory.SaveChanges();
+            }
+            _pendingSellChecks.Remove(kv.Key);
+        }
+
+        if (_pendingRepairChecks.Count > 0 && text.Contains("cannot repair", StringComparison.OrdinalIgnoreCase))
+        {
+            var kv = _pendingRepairChecks.First();
+            var entry = kv.Value.entry;
+            var type = kv.Value.type;
+            entry.CannotRepairItemTypes ??= new List<ItemType>();
+            if (!entry.CannotRepairItemTypes.Contains(type))
+            {
+                entry.CannotRepairItemTypes.Add(type);
+                _npcMemory.SaveChanges();
+            }
+            _pendingRepairChecks.Remove(kv.Key);
+        }
+
+        if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
+        {
+            _processingNpcAction = false;
+            ProcessNpcActionQueue();
         }
     }
 }
