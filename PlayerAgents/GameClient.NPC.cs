@@ -38,9 +38,30 @@ public sealed partial class GameClient
         return response;
     }
 
+    private S.NPCResponse? _queuedNpcResponse;
+    private CancellationTokenSource? _npcResponseCts;
+
     private void DeliverNpcResponse(S.NPCResponse response)
     {
-        _npcResponseTcs?.TrySetResult(response);
-        _npcResponseTcs = null;
+        _queuedNpcResponse = response;
+        _npcResponseCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _npcResponseCts = cts;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(NpcResponseDebounceMs, cts.Token);
+                if (!cts.IsCancellationRequested && _queuedNpcResponse != null)
+                {
+                    _npcResponseTcs?.TrySetResult(_queuedNpcResponse);
+                    _npcResponseTcs = null;
+                    _queuedNpcResponse = null;
+                }
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        });
     }
 }
