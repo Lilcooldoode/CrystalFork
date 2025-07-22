@@ -598,6 +598,7 @@ public sealed partial class GameClient
                 }
                 if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
                 {
+                    _processingNpcAction = false;
                     ProcessNpcActionQueue();
                 }
                 break;
@@ -614,6 +615,7 @@ public sealed partial class GameClient
                 }
                 if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
                 {
+                    _processingNpcAction = false;
                     ProcessNpcActionQueue();
                 }
                 break;
@@ -684,6 +686,7 @@ public sealed partial class GameClient
 
         if (_pendingSellChecks.Count == 0 && _pendingRepairChecks.Count == 0)
         {
+            _processingNpcAction = false;
             ProcessNpcActionQueue();
         }
     }

@@ -408,6 +408,8 @@ public sealed partial class GameClient
         }
 
         _npcMemory.SaveChanges();
+        _processingNpcAction = false;
+        ProcessNpcActionQueue();
     }
 
     private void TryFinishNpcInteraction()
