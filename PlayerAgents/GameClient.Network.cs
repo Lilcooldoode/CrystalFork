@@ -127,17 +127,20 @@ public partial class GameClient
             case S.MapInformation mi:
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mi.FileName + ".map");
                 _ = LoadMapAsync();
+                StartMapExpTracking(_currentMapFile);
                 break;
             case S.MapChanged mc:
                 if (!string.IsNullOrEmpty(_currentMapFile) && !_suppressNextMovement && !_dead)
                 {
                     _movementMemory.AddMovement(_currentMapFile, _currentLocation, mc.FileName, mc.Location);
                 }
+                FinalizeMapExpRate();
                 _suppressNextMovement = false;
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentLocation = mc.Location;
                 _trackedObjects.Clear();
                 _ = LoadMapAsync();
+                StartMapExpTracking(_currentMapFile);
                 break;
             case S.UserInformation info:
                 _objectId = info.ObjectID;
@@ -146,6 +149,7 @@ public partial class GameClient
                 _currentLocation = info.Location;
                 _gender = info.Gender;
                 _level = info.Level;
+                _experience = info.Experience;
                 _hp = info.HP;
                 _mp = info.MP;
                 _inventory = info.Inventory;
@@ -352,7 +356,13 @@ public partial class GameClient
                 _gold += gg.Gold;
                 break;
             case S.GainExperience ge:
+                _experience += ge.Amount;
+                _mapExpGained += ge.Amount;
                 Console.WriteLine($"I gained {ge.Amount} experience");
+                break;
+            case S.LevelChanged lc:
+                _level = lc.Level;
+                _experience = lc.Experience;
                 break;
             case S.Chat chat:
                 break;
@@ -502,6 +512,7 @@ public partial class GameClient
             {
                 _npcMemory.CheckForUpdates();
                 _movementMemory.CheckForUpdates();
+                _expRateMemory.CheckForUpdates();
                 await SendAsync(new C.KeepAlive { Time = Environment.TickCount64 });
             }
             catch (Exception ex)
