@@ -7,6 +7,7 @@ namespace PlayerAgents.Map;
 
 public static class PathFinder
 {
+    private const int StepLimit = 20000;
     public readonly record struct MapPoint(string MapFile, Point Location);
 
     public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null, int radius = 1)
@@ -18,6 +19,9 @@ public static class PathFinder
     {
         int width = map.Width;
         int height = map.Height;
+
+        if (!map.IsWalkable(start.X, start.Y) || !map.IsWalkable(end.X, end.Y))
+            return new List<Point>();
 
         if (Functions.MaxDistance(start, end) <= radius)
             return new List<Point> { start };
@@ -36,10 +40,13 @@ public static class PathFinder
         };
 
         int steps = 0;
-        int maxSteps = Math.Max(width * height, 20000);
+        int maxSteps = Math.Min(width * height, StepLimit);
+        var closed = new HashSet<Point>();
         while (open.Count > 0)
         {
             var current = open.Dequeue();
+            if (!closed.Add(current))
+                continue;
             if (Functions.MaxDistance(current, end) <= radius)
                 return ReconstructPath(cameFrom, current);
 
