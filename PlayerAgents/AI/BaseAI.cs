@@ -38,6 +38,7 @@ public class BaseAI
     protected virtual int WalkDelay => 600;
     protected virtual int AttackDelay => 1400;
     protected virtual TimeSpan EquipCheckInterval => TimeSpan.FromSeconds(5);
+    protected virtual IReadOnlyList<DesiredItem> DesiredItems => Array.Empty<DesiredItem>();
     private DateTime _nextEquipCheck = DateTime.UtcNow;
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
@@ -288,6 +289,53 @@ public class BaseAI
         }
     }
 
+    private static bool MatchesDesiredItem(UserItem item, DesiredItem desired)
+    {
+        if (item.Info == null) return false;
+        if (item.Info.Type != desired.Type) return false;
+        if (desired.Shape.HasValue && item.Info.Shape != desired.Shape.Value) return false;
+        if (desired.HpPotion.HasValue)
+        {
+            bool healsHP = item.Info.Stats[Stat.HP] > 0 || item.Info.Stats[Stat.HPRatePercent] > 0;
+            bool healsMP = item.Info.Stats[Stat.MP] > 0 || item.Info.Stats[Stat.MPRatePercent] > 0;
+            if (desired.HpPotion.Value && !healsHP) return false;
+            if (!desired.HpPotion.Value && !healsMP) return false;
+        }
+
+        return true;
+    }
+
+    private HashSet<UserItem> GetItemsToKeep(IEnumerable<UserItem> inventory)
+    {
+        var keep = new HashSet<UserItem>();
+        int maxWeight = Client.GetMaxBagWeight();
+
+        foreach (var desired in DesiredItems)
+        {
+            var matching = inventory.Where(i => MatchesDesiredItem(i, desired)).ToList();
+
+            if (desired.Count.HasValue)
+            {
+                foreach (var item in matching.OrderByDescending(i => i.Weight).Take(desired.Count.Value))
+                    keep.Add(item);
+            }
+
+            if (desired.WeightFraction > 0)
+            {
+                int requiredWeight = (int)Math.Ceiling(maxWeight * desired.WeightFraction);
+                int current = matching.Where(i => keep.Contains(i)).Sum(i => i.Weight);
+                foreach (var item in matching.Where(i => !keep.Contains(i)).OrderByDescending(i => i.Weight))
+                {
+                    if (current >= requiredWeight) break;
+                    keep.Add(item);
+                    current += item.Weight;
+                }
+            }
+        }
+
+        return keep;
+    }
+
     private async Task HandleInventoryAsync()
     {
         if (_sellingItems) return;
@@ -298,7 +346,9 @@ public class BaseAI
         bool heavy = Client.GetCurrentBagWeight() >= Client.GetMaxBagWeight() * 0.9;
         if (!full && !heavy) return;
 
-        var groups = inventory.Where(i => i != null && i.Info != null)
+        var items = inventory.Where(i => i != null && i.Info != null).ToList();
+        var keepSet = GetItemsToKeep(items);
+        var groups = items.Where(i => !keepSet.Contains(i))
             .GroupBy(i => i!.Info!.Type)
             .ToList();
 

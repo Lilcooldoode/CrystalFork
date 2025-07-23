@@ -4,6 +4,13 @@ public sealed class WizardAI : BaseAI
 {
     public WizardAI(GameClient client) : base(client) { }
 
+    protected override IReadOnlyList<DesiredItem> DesiredItems { get; } = new DesiredItem[]
+    {
+        new DesiredItem(ItemType.Potion, hpPotion: true, weightFraction: 0.10),
+        new DesiredItem(ItemType.Potion, hpPotion: false, weightFraction: 0.50),
+        new DesiredItem(ItemType.Scroll, shape: 1, count: 1)
+    };
+
     protected override int GetItemScore(UserItem item, EquipmentSlot slot)
     {
         if (item.Info == null) return 0;
