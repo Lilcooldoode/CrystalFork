@@ -29,7 +29,8 @@ public sealed class ConsoleAgentLogger : IAgentLogger
 
     public void UpdateStatus(string agent, AgentStatus status)
     {
-        Console.Error.WriteLine($"{agent} --- Level {status.Level} --- Location: {Path.GetFileName(status.MapFile)} ({status.MapName}),{status.X} : {status.Y} --- {status.Action}");
+        var map = Path.GetFileNameWithoutExtension(status.MapFile);
+        Console.Error.WriteLine($"{agent} --- Level {status.Level} --- {map} ({status.MapName}) ({status.X},{status.Y}) --- {status.Action}");
     }
 }
 
@@ -86,19 +87,20 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
     private void Render()
     {
         Console.CursorVisible = false;
-        int colWidth = Math.Max(20, Console.WindowWidth / 3);
+        int colWidth = Math.Max(20, Console.WindowWidth / 4);
         var lines = new List<string>();
         string currentLine = string.Empty;
         for (int i = 0; i < _order.Count; i++)
         {
             var agent = _order[i];
             _status.TryGetValue(agent, out var status);
-            string cell = $"{agent} --- Level {status.Level} --- Location: {Path.GetFileName(status.MapFile)} ({status.MapName}),{status.X} : {status.Y} --- {status.Action}";
+            var map = Path.GetFileNameWithoutExtension(status.MapFile);
+            string cell = $"{agent} --- Level {status.Level} --- {map} ({status.MapName}) ({status.X},{status.Y}) --- {status.Action}";
             if (cell.Length > colWidth)
                 cell = cell.Substring(0, colWidth);
             cell = cell.PadRight(colWidth);
             currentLine += cell;
-            if (i % 3 == 2 || i == _order.Count - 1)
+            if (i % 4 == 3 || i == _order.Count - 1)
             {
                 if (currentLine.Length > Console.WindowWidth)
                     currentLine = currentLine.Substring(0, Console.WindowWidth);
