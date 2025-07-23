@@ -26,16 +26,17 @@ public sealed partial class GameClient
             {
                 int count = await _stream.ReadAsync(_buffer, 0, _buffer.Length);
                 if (count == 0) break;
-                var tmp = new byte[_rawData.Length + count];
-                Array.Copy(_rawData, tmp, _rawData.Length);
-                Array.Copy(_buffer, 0, tmp, _rawData.Length, count);
-                _rawData = tmp;
+                _receiveStream.Position = _receiveStream.Length;
+                _receiveStream.Write(_buffer, 0, count);
 
                 Packet? p;
-                while ((p = Packet.ReceivePacket(_rawData, out _rawData)) != null)
+                byte[] data = _receiveStream.ToArray();
+                while ((p = Packet.ReceivePacket(data, out data)) != null)
                 {
                     HandlePacket(p);
                 }
+                _receiveStream.SetLength(0);
+                _receiveStream.Write(data, 0, data.Length);
             }
         }
         catch (Exception ex)
@@ -85,13 +86,13 @@ public sealed partial class GameClient
                 {
                     Console.WriteLine($"Selected character '{match.Name}' (Index {match.Index})");
                     var start = new C.StartGame { CharacterIndex = match.Index };
-                    _ = Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(start); });
+                    FireAndForget(Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(start); }));
                 }
                 break;
             case S.NewCharacterSuccess ncs:
                 Console.WriteLine("Character created");
                 var startNew = new C.StartGame { CharacterIndex = ncs.CharInfo.Index };
-                _ = Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(startNew); });
+                FireAndForget(Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(startNew); }));
                 break;
             case S.NewCharacter nc:
                 Console.WriteLine($"Character creation failed: {nc.Result}");
@@ -158,6 +159,7 @@ public sealed partial class GameClient
                 _equipment = info.Equipment;
                 BindAll(_inventory);
                 BindAll(_equipment);
+                MarkStatsDirty();
                 Console.WriteLine($"Logged in as {_playerName}");
                 Console.WriteLine($"I am currently at location {_currentLocation.X}, {_currentLocation.Y}");
                 _classTcs.TrySetResult(info.Class);
@@ -174,13 +176,13 @@ public sealed partial class GameClient
                 _timeOfDay = tod.Lights;
                 break;
             case S.ObjectPlayer op:
-                _trackedObjects[op.ObjectID] = new TrackedObject(op.ObjectID, ObjectType.Player, op.Name, op.Location, op.Direction);
+                AddTrackedObject(new TrackedObject(op.ObjectID, ObjectType.Player, op.Name, op.Location, op.Direction));
                 break;
             case S.ObjectMonster om:
-                _trackedObjects[om.ObjectID] = new TrackedObject(om.ObjectID, ObjectType.Monster, om.Name, om.Location, om.Direction, om.AI, om.Dead);
+                AddTrackedObject(new TrackedObject(om.ObjectID, ObjectType.Monster, om.Name, om.Location, om.Direction, om.AI, om.Dead));
                 break;
             case S.ObjectNPC on:
-                _trackedObjects[on.ObjectID] = new TrackedObject(on.ObjectID, ObjectType.Merchant, on.Name, on.Location, on.Direction);
+                AddTrackedObject(new TrackedObject(on.ObjectID, ObjectType.Merchant, on.Name, on.Location, on.Direction));
                 if (!string.IsNullOrEmpty(_currentMapFile))
                 {
                     var mapId = Path.GetFileNameWithoutExtension(_currentMapFile);
@@ -197,24 +199,16 @@ public sealed partial class GameClient
                 }
                 break;
             case S.ObjectItem oi:
-                _trackedObjects[oi.ObjectID] = new TrackedObject(oi.ObjectID, ObjectType.Item, oi.Name, oi.Location, MirDirection.Up);
+                AddTrackedObject(new TrackedObject(oi.ObjectID, ObjectType.Item, oi.Name, oi.Location, MirDirection.Up));
                 break;
             case S.ObjectGold og:
-                _trackedObjects[og.ObjectID] = new TrackedObject(og.ObjectID, ObjectType.Item, "Gold", og.Location, MirDirection.Up);
+                AddTrackedObject(new TrackedObject(og.ObjectID, ObjectType.Item, "Gold", og.Location, MirDirection.Up));
                 break;
             case S.ObjectTurn ot:
-                if (_trackedObjects.TryGetValue(ot.ObjectID, out var objT))
-                {
-                    objT.Location = ot.Location;
-                    objT.Direction = ot.Direction;
-                }
+                UpdateTrackedObject(ot.ObjectID, ot.Location, ot.Direction);
                 break;
             case S.ObjectWalk ow:
-                if (_trackedObjects.TryGetValue(ow.ObjectID, out var objW))
-                {
-                    objW.Location = ow.Location;
-                    objW.Direction = ow.Direction;
-                }
+                UpdateTrackedObject(ow.ObjectID, ow.Location, ow.Direction);
                 if (ow.ObjectID == _objectId)
                 {
                     _currentLocation = ow.Location;
@@ -223,11 +217,7 @@ public sealed partial class GameClient
                 }
                 break;
             case S.ObjectRun oru:
-                if (_trackedObjects.TryGetValue(oru.ObjectID, out var objR))
-                {
-                    objR.Location = oru.Location;
-                    objR.Direction = oru.Direction;
-                }
+                UpdateTrackedObject(oru.ObjectID, oru.Location, oru.Direction);
                 if (oru.ObjectID == _objectId)
                 {
                     _currentLocation = oru.Location;
@@ -294,24 +284,23 @@ public sealed partial class GameClient
             case S.ObjectDied od:
                 if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
                 {
+                    bool wasBlocking = IsBlocking(objD);
                     objD.Dead = true;
+                    if (wasBlocking)
+                        _blockingCells.TryRemove(objD.Location, out _);
                     if (objD.Type == ObjectType.Monster && AutoHarvestAIs.Contains(objD.AI) && objD.EngagedWith == _objectId)
                     {
-                        _ = Task.Run(async () => await HarvestLoopAsync(objD));
+                        FireAndForget(Task.Run(async () => await HarvestLoopAsync(objD)));
                     }
                 }
                 break;
             case S.ObjectHarvested oh:
-                if (_trackedObjects.TryGetValue(oh.ObjectID, out var objH))
-                {
-                    objH.Location = oh.Location;
-                    objH.Direction = oh.Direction;
-                }
+                UpdateTrackedObject(oh.ObjectID, oh.Location, oh.Direction);
                 if (_harvestTargetId.HasValue && oh.ObjectID == _harvestTargetId.Value)
                     _harvestComplete = true;
                 break;
             case S.ObjectRemove ore:
-                _trackedObjects.TryRemove(ore.ObjectID, out _);
+                RemoveTrackedObject(ore.ObjectID);
                 break;
             case S.Revived:
                 if (_dead)
@@ -336,6 +325,8 @@ public sealed partial class GameClient
                 else if (_trackedObjects.TryGetValue(orv.ObjectID, out var objRev))
                 {
                     objRev.Dead = false;
+                    if (IsBlocking(objRev))
+                        _blockingCells.AddOrUpdate(objRev.Location, 1, (_, v) => v + 1);
                 }
                 break;
             case S.NewItemInfo nii:
@@ -364,6 +355,7 @@ public sealed partial class GameClient
             case S.LevelChanged lc:
                 _level = lc.Level;
                 _experience = lc.Experience;
+                MarkStatsDirty();
                 break;
             case S.Chat chat:
                 HandleTradeFailChat(chat.Message);
@@ -408,14 +400,15 @@ public sealed partial class GameClient
                 if (ei.Grid == MirGridType.Inventory && ei.Success && _inventory != null && _equipment != null)
                 {
                     int invIndex = Array.FindIndex(_inventory, x => x != null && x.UniqueID == ei.UniqueID);
-                    if (invIndex >= 0 && ei.To >= 0 && ei.To < _equipment.Length)
-                    {
-                        var temp = _equipment[ei.To];
-                        _equipment[ei.To] = _inventory[invIndex];
-                        _inventory[invIndex] = temp;
-                    }
+                if (invIndex >= 0 && ei.To >= 0 && ei.To < _equipment.Length)
+                {
+                    var temp = _equipment[ei.To];
+                    _equipment[ei.To] = _inventory[invIndex];
+                    _inventory[invIndex] = temp;
+                    MarkStatsDirty();
                 }
-                break;
+            }
+            break;
             case S.RemoveItem ri:
                 if (ri.Grid == MirGridType.Inventory && ri.Success && _inventory != null && _equipment != null)
                 {
@@ -424,6 +417,7 @@ public sealed partial class GameClient
                     {
                         _inventory[ri.To] = _equipment[eqIndex];
                         _equipment[eqIndex] = null;
+                        MarkStatsDirty();
                     }
                 }
                 break;
@@ -474,6 +468,7 @@ public sealed partial class GameClient
                                 it.Count -= di.Count;
                             else
                                 _equipment[idx] = null;
+                            MarkStatsDirty();
                         }
                     }
                 }
@@ -490,6 +485,7 @@ public sealed partial class GameClient
                 {
                     int idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == newItem.UniqueID);
                     if (idx >= 0) _equipment[idx] = newItem;
+                    MarkStatsDirty();
                 }
                 break;
             case S.NPCResponse nr:
@@ -511,7 +507,7 @@ public sealed partial class GameClient
                     }
                     if (npcSellEntry.SellItemTypes == null && npcSellEntry.CannotSellItemTypes == null)
                     {
-                        _ = Task.Run(async () => { await HandleNpcSellAsync(npcSellEntry); _npcSellTcs?.TrySetResult(true); _npcSellTcs = null; });
+                        FireAndForget(Task.Run(async () => { await HandleNpcSellAsync(npcSellEntry); _npcSellTcs?.TrySetResult(true); _npcSellTcs = null; }));
                     }
                     else
                     {
@@ -532,7 +528,7 @@ public sealed partial class GameClient
                     }
                     if (npcRepairEntry.RepairItemTypes == null && npcRepairEntry.CannotRepairItemTypes == null)
                     {
-                        _ = Task.Run(async () => { await HandleNpcRepairAsync(npcRepairEntry); _npcRepairTcs?.TrySetResult(true); _npcRepairTcs = null; });
+                        FireAndForget(Task.Run(async () => { await HandleNpcRepairAsync(npcRepairEntry); _npcRepairTcs?.TrySetResult(true); _npcRepairTcs = null; }));
                     }
                     else
                     {

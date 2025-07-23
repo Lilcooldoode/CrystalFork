@@ -42,10 +42,11 @@ public class BaseAI
     private DateTime _nextEquipCheck = DateTime.UtcNow;
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
-
+    
     private readonly Dictionary<(Point Location, string Name), DateTime> _itemRetryTimes = new();
     private static readonly TimeSpan ItemRetryDelay = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan DroppedItemRetryDelay = TimeSpan.FromMinutes(5);
+    private bool _sentRevive;
     private bool _sellingItems;
 
     protected virtual int GetItemScore(UserItem item, EquipmentSlot slot)
@@ -240,14 +241,9 @@ public class BaseAI
 
     private HashSet<Point> BuildObstacles(uint ignoreId = 0)
     {
-        var obstacles = new HashSet<Point>();
-        foreach (var obj in Client.TrackedObjects.Values)
-        {
-            if (obj.Id == ignoreId || obj.Id == Client.ObjectId) continue;
-            if (obj.Dead) continue;
-            if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
-                obstacles.Add(obj.Location);
-        }
+        var obstacles = new HashSet<Point>(Client.BlockingCells);
+        if (ignoreId != 0 && Client.TrackedObjects.TryGetValue(ignoreId, out var obj))
+            obstacles.Remove(obj.Location);
         return obstacles;
     }
 
@@ -413,43 +409,18 @@ public class BaseAI
 
     public virtual async Task RunAsync()
     {
-        bool sentRevive = false;
         Point current;
         while (true)
         {
+            if (await HandleReviveAsync())
+                continue;
+
+            if (await HandleHarvestingAsync())
+                continue;
+
             Client.ProcessMapExpRateInterval();
             if (Client.IsProcessingNpc)
             {
-                await Task.Delay(WalkDelay);
-                continue;
-            }
-            if (Client.Dead)
-            {
-                _currentTarget = null;
-                if (!sentRevive)
-                {
-                    await Client.TownReviveAsync();
-                    sentRevive = true;
-                }
-                await Task.Delay(WalkDelay);
-                if (!Client.Dead) sentRevive = false;
-                continue;
-            }
-
-            if (Client.IsHarvesting)
-            {
-                current = Client.CurrentLocation;
-                int dist;
-                var target = FindClosestTarget(current, out dist);
-                if (target != null && target.Type == ObjectType.Monster && dist <= 1)
-                {
-                    if (DateTime.UtcNow >= _nextAttackTime)
-                    {
-                        var dir = Functions.DirectionFromPoint(current, target.Location);
-                        await Client.AttackAsync(dir);
-                        _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
-                    }
-                }
                 await Task.Delay(WalkDelay);
                 continue;
             }
@@ -581,5 +552,37 @@ public class BaseAI
 
             await Task.Delay(WalkDelay);
         }
+    }
+
+    private async Task<bool> HandleReviveAsync()
+    {
+        if (!Client.Dead) return false;
+        _currentTarget = null;
+        if (!_sentRevive)
+        {
+            await Client.TownReviveAsync();
+            _sentRevive = true;
+        }
+        await Task.Delay(WalkDelay);
+        if (!Client.Dead) _sentRevive = false;
+        return true;
+    }
+
+    private async Task<bool> HandleHarvestingAsync()
+    {
+        if (!Client.IsHarvesting) return false;
+        var current = Client.CurrentLocation;
+        var target = FindClosestTarget(current, out int dist);
+        if (target != null && target.Type == ObjectType.Monster && dist <= 1)
+        {
+            if (DateTime.UtcNow >= _nextAttackTime)
+            {
+                var dir = Functions.DirectionFromPoint(current, target.Location);
+                await Client.AttackAsync(dir);
+                _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
+            }
+        }
+        await Task.Delay(WalkDelay);
+        return true;
     }
 }

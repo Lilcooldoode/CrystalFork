@@ -13,8 +13,11 @@ public sealed class MapExpRateEntry
 
 public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
 {
+    private readonly Dictionary<(string, MirClass, ushort), MapExpRateEntry> _lookup = new();
     public MapExpRateMemoryBank(string path) : base(path, "Global\\MapExpRateMemoryBankMutex")
     {
+        foreach (var e in _entries)
+            _lookup[(e.MapFile, e.Class, e.Level)] = e;
     }
 
     public void AddRate(string mapFile, MirClass playerClass, ushort level, double expPerHour)
@@ -24,8 +27,8 @@ public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
         {
             ReloadIfUpdated();
             var normalized = Path.GetFileNameWithoutExtension(mapFile);
-            var existing = _entries.FirstOrDefault(e => e.MapFile == normalized && e.Class == playerClass && e.Level == level);
-            if (existing != null)
+            var key = (normalized, playerClass, level);
+            if (_lookup.TryGetValue(key, out var existing))
             {
                 if (expPerHour > existing.ExpPerHour)
                 {
@@ -35,7 +38,9 @@ public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
             }
             else
             {
-                _entries.Add(new MapExpRateEntry { MapFile = normalized, Class = playerClass, Level = level, ExpPerHour = expPerHour });
+                var entry = new MapExpRateEntry { MapFile = normalized, Class = playerClass, Level = level, ExpPerHour = expPerHour };
+                _entries.Add(entry);
+                _lookup[key] = entry;
                 added = true;
             }
         }

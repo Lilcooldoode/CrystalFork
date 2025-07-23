@@ -34,17 +34,7 @@ public sealed partial class GameClient
         if (_mapData == null || !_mapData.IsWalkable(p.X, p.Y))
             return true;
 
-        foreach (var obj in _trackedObjects.Values)
-        {
-            if (obj.Id == _objectId || obj.Dead) continue;
-            if (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant)
-            {
-                if (obj.Location == p)
-                    return true;
-            }
-        }
-
-        return false;
+        return _blockingCells.ContainsKey(p);
     }
 
     private async Task TryOpenDoorAsync(Point p)

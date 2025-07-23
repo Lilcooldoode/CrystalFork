@@ -50,7 +50,7 @@ public sealed partial class GameClient
         _npcResponseCts?.Cancel();
         var cts = new CancellationTokenSource();
         _npcResponseCts = cts;
-        _ = Task.Run(async () =>
+        FireAndForget(Task.Run(async () =>
         {
             try
             {
@@ -65,7 +65,7 @@ public sealed partial class GameClient
             catch (TaskCanceledException)
             {
             }
-        });
+        }));
     }
 
     public Task WaitForNpcGoodsAsync(CancellationToken cancellationToken = default)

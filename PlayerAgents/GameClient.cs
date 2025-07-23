@@ -23,7 +23,7 @@ public sealed partial class GameClient
     private NetworkStream? _stream;
     private long _pingTime;
     private readonly byte[] _buffer = new byte[1024 * 8];
-    private byte[] _rawData = Array.Empty<byte>();
+    private readonly MemoryStream _receiveStream = new();
     private readonly Random _random = new();
     private MirClass? _playerClass;
     private BaseStats? _baseStats;
@@ -46,6 +46,11 @@ public sealed partial class GameClient
     private UserItem? _lastPickedItem;
     private uint _gold;
 
+    private int _cachedMaxBagWeight;
+    private int _cachedMaxHP;
+    private int _cachedMaxMP;
+    private bool _statsDirty = true;
+
     private uint? _lastAttackTarget;
     private uint? _lastStruckAttacker;
 
@@ -62,6 +67,46 @@ public sealed partial class GameClient
 
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
+    private readonly ConcurrentDictionary<System.Drawing.Point, int> _blockingCells = new();
+
+    private static bool IsBlocking(TrackedObject obj) =>
+        !obj.Dead && (obj.Type == ObjectType.Player || obj.Type == ObjectType.Monster || obj.Type == ObjectType.Merchant);
+
+    private void AddTrackedObject(TrackedObject obj)
+    {
+        _trackedObjects[obj.Id] = obj;
+        if (IsBlocking(obj))
+            _blockingCells.AddOrUpdate(obj.Location, 1, (_, v) => v + 1);
+    }
+
+    private void UpdateTrackedObject(uint id, Point newLoc, MirDirection dir)
+    {
+        if (_trackedObjects.TryGetValue(id, out var obj))
+        {
+            var oldLoc = obj.Location;
+            obj.Location = newLoc;
+            obj.Direction = dir;
+            if (IsBlocking(obj) && oldLoc != newLoc)
+            {
+                _blockingCells.AddOrUpdate(newLoc, 1, (_, v) => v + 1);
+                if (_blockingCells.AddOrUpdate(oldLoc, 0, (_, v) => Math.Max(0, v - 1)) == 0)
+                    _blockingCells.TryRemove(oldLoc, out _);
+            }
+        }
+    }
+
+    private void RemoveTrackedObject(uint id)
+    {
+        if (_trackedObjects.TryRemove(id, out var obj))
+        {
+            if (IsBlocking(obj))
+            {
+                var oldLoc = obj.Location;
+                if (_blockingCells.AddOrUpdate(oldLoc, 0, (_, v) => Math.Max(0, v - 1)) == 0)
+                    _blockingCells.TryRemove(oldLoc, out _);
+            }
+        }
+    }
 
     private readonly ConcurrentDictionary<uint, NpcEntry> _npcEntries = new();
     private uint? _dialogNpcId;
@@ -132,6 +177,7 @@ public sealed partial class GameClient
     public LightSetting TimeOfDay => _timeOfDay;
     public MapData? CurrentMap => _mapData;
     public IReadOnlyDictionary<uint, TrackedObject> TrackedObjects => _trackedObjects;
+    public IEnumerable<Point> BlockingCells => _blockingCells.Keys;
     public bool IsMapLoaded => _mapData != null && _mapData.Width > 0 && _mapData.Height > 0;
     public Point CurrentLocation => _currentLocation;
     public long PingTime => _pingTime;
@@ -191,6 +237,46 @@ public sealed partial class GameClient
 
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));
 
+    private void MarkStatsDirty() => _statsDirty = true;
+
+    private void RecalculateStats()
+    {
+        if (_playerClass == null)
+        {
+            _cachedMaxBagWeight = int.MaxValue;
+            _cachedMaxHP = int.MaxValue;
+            _cachedMaxMP = int.MaxValue;
+            _statsDirty = false;
+            return;
+        }
+
+        _baseStats ??= new BaseStats(_playerClass.Value);
+
+        int baseWeight = _baseStats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
+        int extraWeight = 0;
+        int extraHP = 0;
+        int extraMP = 0;
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item == null || item.Info == null) continue;
+                extraWeight += item.Info.Stats[Stat.BagWeight];
+                extraWeight += item.AddedStats[Stat.BagWeight];
+                extraHP += item.Info.Stats[Stat.HP];
+                extraHP += item.AddedStats[Stat.HP];
+                extraMP += item.Info.Stats[Stat.MP];
+                extraMP += item.AddedStats[Stat.MP];
+            }
+        }
+        _cachedMaxBagWeight = baseWeight + extraWeight;
+        int baseHP = _baseStats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
+        int baseMP = _baseStats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
+        _cachedMaxHP = baseHP + extraHP;
+        _cachedMaxMP = baseMP + extraMP;
+        _statsDirty = false;
+    }
+
     public int GetCurrentBagWeight()
     {
         int weight = 0;
@@ -205,56 +291,20 @@ public sealed partial class GameClient
 
     public int GetMaxBagWeight()
     {
-        if (_playerClass == null) return int.MaxValue;
-        _baseStats ??= new BaseStats(_playerClass.Value);
-        int baseWeight = _baseStats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
-        int extra = 0;
-        if (_equipment != null)
-        {
-            foreach (var item in _equipment)
-            {
-                if (item == null || item.Info == null) continue;
-                extra += item.Info.Stats[Stat.BagWeight];
-                extra += item.AddedStats[Stat.BagWeight];
-            }
-        }
-        return baseWeight + extra;
+        if (_statsDirty) RecalculateStats();
+        return _cachedMaxBagWeight;
     }
 
     public int GetMaxHP()
     {
-        if (_playerClass == null) return int.MaxValue;
-        _baseStats ??= new BaseStats(_playerClass.Value);
-        int baseHP = _baseStats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
-        int extra = 0;
-        if (_equipment != null)
-        {
-            foreach (var item in _equipment)
-            {
-                if (item == null || item.Info == null) continue;
-                extra += item.Info.Stats[Stat.HP];
-                extra += item.AddedStats[Stat.HP];
-            }
-        }
-        return baseHP + extra;
+        if (_statsDirty) RecalculateStats();
+        return _cachedMaxHP;
     }
 
     public int GetMaxMP()
     {
-        if (_playerClass == null) return int.MaxValue;
-        _baseStats ??= new BaseStats(_playerClass.Value);
-        int baseMP = _baseStats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
-        int extra = 0;
-        if (_equipment != null)
-        {
-            foreach (var item in _equipment)
-            {
-                if (item == null || item.Info == null) continue;
-                extra += item.Info.Stats[Stat.MP];
-                extra += item.AddedStats[Stat.MP];
-            }
-        }
-        return baseMP + extra;
+        if (_statsDirty) RecalculateStats();
+        return _cachedMaxMP;
     }
 
     public bool HasFreeBagSpace()
@@ -636,5 +686,10 @@ public sealed partial class GameClient
     public void ResumeNpcInteractions()
     {
         ProcessNextNpcInQueue();
+    }
+
+    private static void FireAndForget(Task task)
+    {
+        task.ContinueWith(t => Console.WriteLine(t.Exception), TaskContinuationOptions.OnlyOnFaulted);
     }
 }

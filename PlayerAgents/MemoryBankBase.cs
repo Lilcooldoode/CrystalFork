@@ -24,7 +24,8 @@ public abstract class MemoryBankBase<TEntry>
     {
         try
         {
-            _fileMutex.WaitOne();
+            if (!_fileMutex.WaitOne(TimeSpan.FromSeconds(5)))
+                throw new TimeoutException("Failed to acquire file mutex");
         }
         catch (AbandonedMutexException)
         {

@@ -13,8 +13,8 @@ public sealed partial class GameClient
         _stream = _client.GetStream();
         Console.WriteLine("Connected to server");
         _canRun = false;
-        _ = Task.Run(ReceiveLoop);
-        _ = Task.Run(KeepAliveLoop);
+        FireAndForget(Task.Run(ReceiveLoop));
+        FireAndForget(Task.Run(KeepAliveLoop));
     }
 
     public async Task LoginAsync()

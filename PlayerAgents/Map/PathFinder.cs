@@ -7,7 +7,6 @@ namespace PlayerAgents.Map;
 
 public static class PathFinder
 {
-    private readonly record struct Node(Point Point, int G, int F);
     public readonly record struct MapPoint(string MapFile, Point Location);
 
     public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null, int radius = 1)
@@ -25,11 +24,11 @@ public static class PathFinder
 
         if (width == 0 || height == 0)
             return new List<Point>();
-        var open = new PriorityQueue<Node, int>();
+        var open = new PriorityQueue<Point, int>();
         var cameFrom = new Dictionary<Point, Point>();
         var gScore = new Dictionary<Point, int>();
         gScore[start] = 0;
-        open.Enqueue(new Node(start, 0, Heuristic(start, end)), Heuristic(start, end));
+        open.Enqueue(start, Heuristic(start, end));
         var directions = new[]
         {
             new Point(0,-1), new Point(1,0), new Point(0,1), new Point(-1,0),
@@ -40,7 +39,7 @@ public static class PathFinder
         int maxSteps = Math.Max(width * height, 20000);
         while (open.Count > 0)
         {
-            var current = open.Dequeue().Point;
+            var current = open.Dequeue();
             if (Functions.MaxDistance(current, end) <= radius)
                 return ReconstructPath(cameFrom, current);
 
@@ -57,7 +56,7 @@ public static class PathFinder
                 cameFrom[neighbor] = current;
                 gScore[neighbor] = tentative;
                 int f = tentative + Heuristic(neighbor, end);
-                open.Enqueue(new Node(neighbor, tentative, f), f);
+                open.Enqueue(neighbor, f);
             }
         }
         return new List<Point>();

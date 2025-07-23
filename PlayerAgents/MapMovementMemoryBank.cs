@@ -16,9 +16,15 @@ public sealed class MapMovementEntry
 
 public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
 {
+    private readonly HashSet<string> _keys = new();
     public MapMovementMemoryBank(string path) : base(path, "Global\\MapMovementMemoryBankMutex")
     {
+        foreach (var e in _entries)
+            _keys.Add(Key(e.SourceMap, e.SourceX, e.SourceY, e.DestinationMap, e.DestinationX, e.DestinationY));
     }
+
+    private static string Key(string src, int sx, int sy, string dest, int dx, int dy) =>
+        $"{src}:{sx}:{sy}:{dest}:{dx}:{dy}";
 
     public void AddMovement(string sourceMapFile, Point sourceLocation, string destinationMapFile, Point destinationLocation)
     {
@@ -28,9 +34,8 @@ public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
             ReloadIfUpdated();
             var src = Path.GetFileNameWithoutExtension(sourceMapFile);
             var dest = Path.GetFileNameWithoutExtension(destinationMapFile);
-            bool exists = _entries.Any(e => e.SourceMap == src && e.SourceX == sourceLocation.X && e.SourceY == sourceLocation.Y &&
-                                           e.DestinationMap == dest && e.DestinationX == destinationLocation.X && e.DestinationY == destinationLocation.Y);
-            if (!exists)
+            var key = Key(src, sourceLocation.X, sourceLocation.Y, dest, destinationLocation.X, destinationLocation.Y);
+            if (!_keys.Contains(key))
             {
                 _entries.Add(new MapMovementEntry
                 {
@@ -41,6 +46,7 @@ public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
                     DestinationX = destinationLocation.X,
                     DestinationY = destinationLocation.Y
                 });
+                _keys.Add(key);
                 added = true;
             }
         }

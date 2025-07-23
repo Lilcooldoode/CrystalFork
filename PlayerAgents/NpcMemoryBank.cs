@@ -23,8 +23,11 @@ public sealed class NpcEntry
 
 public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>
 {
+    private readonly Dictionary<(string, string, int, int), NpcEntry> _lookup = new();
     public NpcMemoryBank(string path) : base(path, "Global\\NpcMemoryBankMutex")
     {
+        foreach (var e in _entries)
+            _lookup[(e.Name, e.MapFile, e.X, e.Y)] = e;
     }
 
     public NpcEntry AddNpc(string name, string mapFile, Point location)
@@ -35,11 +38,12 @@ public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>
         {
             ReloadIfUpdated();
             var normalized = Path.GetFileNameWithoutExtension(mapFile);
-            entry = _entries.FirstOrDefault(e => e.Name == name && e.MapFile == normalized && e.X == location.X && e.Y == location.Y);
-            if (entry == null)
+            var key = (name, normalized, location.X, location.Y);
+            if (!_lookup.TryGetValue(key, out entry))
             {
                 entry = new NpcEntry { Name = name, MapFile = normalized, X = location.X, Y = location.Y };
                 _entries.Add(entry);
+                _lookup[key] = entry;
                 added = true;
             }
         }
