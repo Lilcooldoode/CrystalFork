@@ -45,6 +45,7 @@ public class BaseAI
     private readonly Dictionary<(Point Location, string Name), DateTime> _itemRetryTimes = new();
     private static readonly TimeSpan ItemRetryDelay = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan DroppedItemRetryDelay = TimeSpan.FromMinutes(5);
+    private bool _sellingItems;
 
     protected virtual int GetItemScore(UserItem item, EquipmentSlot slot)
     {
@@ -287,6 +288,60 @@ public class BaseAI
         }
     }
 
+    private async Task HandleInventoryAsync()
+    {
+        if (_sellingItems) return;
+        var inventory = Client.Inventory;
+        if (inventory == null) return;
+
+        bool full = !Client.HasFreeBagSpace();
+        bool heavy = Client.GetCurrentBagWeight() >= Client.GetMaxBagWeight() * 0.9;
+        if (!full && !heavy) return;
+
+        var groups = inventory.Where(i => i != null && i.Info != null)
+            .GroupBy(i => i!.Info!.Type)
+            .ToList();
+
+        _sellingItems = true;
+        Client.IgnoreNpcInteractions = true;
+        foreach (var group in groups)
+        {
+            if (!Client.TryFindNearestNpc(group.Key, out var npcId, out var loc, out var entry))
+                continue;
+
+            Console.WriteLine($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {group.Count()} items");
+
+            var map = Client.CurrentMap;
+            if (map == null) continue;
+            bool foundPath = true;
+            while (Functions.MaxDistance(Client.CurrentLocation, loc) > 6)
+            {
+                var path = await FindPathAsync(map, Client.CurrentLocation, loc, npcId, 6);
+                if (path.Count == 0)
+                {
+                    Console.WriteLine($"Could not path to {entry?.Name ?? npcId.ToString()}");
+                    foundPath = false;
+                    break;
+                }
+                await MoveAlongPathAsync(path, loc, Client.CurrentLocation);
+                await Task.Delay(WalkDelay);
+                map = Client.CurrentMap;
+                if (map == null) break;
+            }
+
+            if (foundPath && Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
+            {
+                await Client.SellItemsToNpcAsync(npcId, group.Where(i => i != null).Select(i => i!).ToList());
+                Console.WriteLine($"Finished selling to {entry?.Name ?? npcId.ToString()}");
+            }
+
+            if (!foundPath) break; // resume normal behaviour if we cannot reach npc
+        }
+        Client.IgnoreNpcInteractions = false;
+        Client.ResumeNpcInteractions();
+        _sellingItems = false;
+    }
+
     public virtual async Task RunAsync()
     {
         bool sentRevive = false;
@@ -337,6 +392,8 @@ public class BaseAI
             }
 
             await TryUsePotionsAsync();
+
+            await HandleInventoryAsync();
 
             if (Client.GetCurrentBagWeight() > Client.GetMaxBagWeight() && Client.LastPickedItem != null)
             {

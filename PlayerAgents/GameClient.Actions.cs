@@ -215,4 +215,15 @@ public sealed partial class GameClient
         };
         await SendAsync(drop);
     }
+
+    public async Task SellItemAsync(UserItem item)
+    {
+        if (_stream == null) return;
+        var sell = new C.SellItem
+        {
+            UniqueID = item.UniqueID,
+            Count = item.Count
+        };
+        await SendAsync(sell);
+    }
 }

@@ -189,7 +189,7 @@ public sealed partial class GameClient
 
                     if (!_npcQueue.Contains(on.ObjectID))
                         _npcQueue.Enqueue(on.ObjectID);
-                    if (!_dialogNpcId.HasValue)
+                    if (!_dialogNpcId.HasValue && !IgnoreNpcInteractions)
                         ProcessNextNpcInQueue();
                 }
                 break;
@@ -358,6 +358,7 @@ public sealed partial class GameClient
                 break;
             case S.GainedGold gg:
                 _gold += gg.Gold;
+                Console.WriteLine($"Gained {gg.Gold} gold");
                 break;
             case S.GainExperience ge:
                 _experience += ge.Amount;
@@ -550,6 +551,11 @@ public sealed partial class GameClient
                 {
                     if (sell.Success)
                     {
+                        string itemName = string.Empty;
+                        var invItem = _inventory != null ? Array.Find(_inventory, x => x != null && x.UniqueID == sell.UniqueID) : null;
+                        var eqItem = invItem == null && _equipment != null ? Array.Find(_equipment, x => x != null && x.UniqueID == sell.UniqueID) : null;
+                        var it = invItem ?? eqItem;
+                        if (it != null && it.Info != null) itemName = it.Info.FriendlyName;
                         infoSell.entry.SellItemTypes ??= new List<ItemType>();
                         if (!infoSell.entry.SellItemTypes.Contains(infoSell.type))
                         {
@@ -561,13 +567,13 @@ public sealed partial class GameClient
                             int idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == sell.UniqueID);
                             if (idx >= 0)
                             {
-                                var it = _inventory[idx];
-                                if (it != null)
+                                var item = _inventory[idx];
+                                if (item != null)
                                 {
-                                    if (it.Count <= sell.Count)
+                                    if (item.Count <= sell.Count)
                                         _inventory[idx] = null;
                                     else
-                                        it.Count -= sell.Count;
+                                        item.Count -= sell.Count;
                                 }
                             }
                         }
@@ -576,18 +582,19 @@ public sealed partial class GameClient
                             int idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == sell.UniqueID);
                             if (idx >= 0)
                             {
-                                var it = _equipment[idx];
-                                if (it != null)
+                                var item = _equipment[idx];
+                                if (item != null)
                                 {
-                                    if (it.Count <= sell.Count)
+                                    if (item.Count <= sell.Count)
                                         _equipment[idx] = null;
                                     else
-                                        it.Count -= sell.Count;
+                                        item.Count -= sell.Count;
                                 }
                             }
                         }
                         if (_lastPickedItem != null && _lastPickedItem.UniqueID == sell.UniqueID)
                             _lastPickedItem = null;
+                        Console.WriteLine($"Sold {itemName} x{sell.Count} to {infoSell.entry.Name}");
                     }
                     else
                     {
