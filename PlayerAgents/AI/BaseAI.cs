@@ -14,6 +14,8 @@ public class BaseAI
     private Point? _searchDestination;
     private Point? _lostTargetLocation;
     private DateTime _nextTargetSwitchTime = DateTime.MinValue;
+    private List<Point>? _currentRoamPath;
+
 
     protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
     // Using HashSet for faster Contains checks
@@ -261,24 +263,35 @@ public class BaseAI
         }
     }
 
-    private async Task MoveAlongPathAsync(List<Point> path, Point destination, Point current)
+    private async Task MoveAlongPathAsync(List<Point> path, Point destination)
     {
+        if (path.Count <= 1) return;
+
+        var current = Client.CurrentLocation;
+
         if (path.Count > 2)
         {
-            var first = path[1];
-            var dir = Functions.DirectionFromPoint(current, first);
+            var next = path[1];
+            var dir = Functions.DirectionFromPoint(current, next);
             if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
+            {
                 await Client.RunAsync(dir);
-            else if (Client.CanWalk(dir))
-                await Client.WalkAsync(dir);
+                path.RemoveRange(0, 2);
+                return;
+            }
         }
-        else if (path.Count > 1)
+
+        if (path.Count > 1)
         {
             var dir = Functions.DirectionFromPoint(current, path[1]);
             if (Client.CanWalk(dir))
+            {
                 await Client.WalkAsync(dir);
+                path.RemoveAt(0);
+                return;
+            }
         }
-        else if (path.Count == 1)
+        else
         {
             var dir = Functions.DirectionFromPoint(current, destination);
             if (Client.CanWalk(dir))
@@ -373,7 +386,7 @@ public class BaseAI
                     foundPath = false;
                     break;
                 }
-                await MoveAlongPathAsync(path, loc, Client.CurrentLocation);
+                await MoveAlongPathAsync(path, loc);
                 await Task.Delay(WalkDelay);
                 map = Client.CurrentMap;
                 if (map == null) break;
@@ -472,6 +485,7 @@ public class BaseAI
             if (_currentTarget != null && !Client.TrackedObjects.ContainsKey(_currentTarget.Id))
             {
                 _lostTargetLocation = _currentTarget.Location;
+                _currentRoamPath = null;
                 _currentTarget = null;
             }
             if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
@@ -497,6 +511,7 @@ public class BaseAI
 
             if (closest != null)
             {
+                _currentRoamPath = null;
                 _lostTargetLocation = null;
                 if (_currentTarget?.Id != closest.Id)
                 {
@@ -511,7 +526,7 @@ public class BaseAI
                     if (distance > 0)
                     {
                         var path = await FindPathAsync(map, current, closest.Location, closest.Id, 0);
-                        await MoveAlongPathAsync(path, closest.Location, current);
+                        await MoveAlongPathAsync(path, closest.Location);
                     }
                     else
                     {
@@ -528,7 +543,7 @@ public class BaseAI
                     if (distance > 1)
                     {
                         var path = await FindPathAsync(map, current, closest.Location, closest.Id);
-                        await MoveAlongPathAsync(path, closest.Location, current);
+                        await MoveAlongPathAsync(path, closest.Location);
                     }
                     else if (DateTime.UtcNow >= _nextAttackTime)
                     {
@@ -549,10 +564,11 @@ public class BaseAI
                     }
                     else
                     {
+                        _currentRoamPath = null;
                         var path = await FindPathAsync(map, current, _lostTargetLocation.Value);
                         if (path.Count > 0)
                         {
-                            await MoveAlongPathAsync(path, _lostTargetLocation.Value, current);
+                            await MoveAlongPathAsync(path, _lostTargetLocation.Value);
                         }
                         else
                         {
@@ -568,17 +584,24 @@ public class BaseAI
                         !map.IsWalkable(_searchDestination.Value.X, _searchDestination.Value.Y))
                     {
                         _searchDestination = GetRandomPoint(map, Random);
+                        _currentRoamPath = null;
                         Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
                     }
 
-                    var path = await FindPathAsync(map, current, _searchDestination.Value);
-                    if (path.Count == 0)
+                    if (_currentRoamPath == null || _currentRoamPath.Count <= 1)
                     {
-                        _searchDestination = GetRandomPoint(map, Random);
-                        await Task.Delay(WalkDelay);
-                        continue;
+                        _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value);
+                        if (_currentRoamPath.Count == 0)
+                        {
+                            _searchDestination = GetRandomPoint(map, Random);
+                            await Task.Delay(WalkDelay);
+                            continue;
+                        }
                     }
-                    await MoveAlongPathAsync(path, _searchDestination.Value, current);
+
+                    await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
+                    if (_currentRoamPath.Count <= 1)
+                        _currentRoamPath = null;
                 }
             }
 
