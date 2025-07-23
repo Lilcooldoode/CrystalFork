@@ -1,18 +1,31 @@
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
+using System.Threading;
 
 namespace PlayerAgents.Map;
 
 public static class PathFinder
 {
     private const int StepLimit = 20000;
+    // limit concurrent path finding to avoid high CPU usage when many agents
+    private static readonly SemaphoreSlim _semaphore =
+        new SemaphoreSlim(Environment.ProcessorCount);
     public readonly record struct MapPoint(string MapFile, Point Location);
 
     public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null, int radius = 1)
     {
-        return await Task.Run(() => FindPath(map, start, end, obstacles, radius));
+        await _semaphore.WaitAsync();
+        try
+        {
+            return await Task.Run(() => FindPath(map, start, end, obstacles, radius));
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 
     private static List<Point> FindPath(MapData map, Point start, Point end, ISet<Point>? obstacles, int radius)
@@ -91,6 +104,9 @@ public static class PathFinder
     public static async Task<List<MapPoint>> FindPathAsync(MapMovementMemoryBank movements,
         string startMapFile, Point start, string endMapFile, Point end, ISet<Point>? obstacles = null, int radius = 1)
     {
+        await _semaphore.WaitAsync();
+        try
+        {
         // normalize map names for memory lookup
         var startMap = Path.GetFileNameWithoutExtension(startMapFile);
         var destMap = Path.GetFileNameWithoutExtension(endMapFile);
@@ -161,7 +177,11 @@ public static class PathFinder
             return new List<MapPoint>();
         foreach (var p in finalPartial)
             resultPath.Add(new MapPoint(currentMapPath, p));
-
         return resultPath;
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 }
