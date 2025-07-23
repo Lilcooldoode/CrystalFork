@@ -51,6 +51,56 @@ public sealed partial class GameClient
         return entry != null;
     }
 
+    public bool TryFindNearestNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes)
+    {
+        id = 0;
+        location = default;
+        entry = null;
+        matchedTypes = new List<ItemType>();
+        if (string.IsNullOrEmpty(_currentMapFile))
+            return false;
+
+        int bestDist = int.MaxValue;
+        string map = Path.GetFileNameWithoutExtension(_currentMapFile);
+
+        foreach (var e in _npcMemory.GetAll())
+        {
+            if (e.MapFile != map) continue;
+            var sells = new List<ItemType>();
+            foreach (var t in types)
+            {
+                bool knows = e.SellItemTypes != null && e.SellItemTypes.Contains(t);
+                bool unknown = e.SellItemTypes == null && e.CannotSellItemTypes == null && e.CanSell;
+                if (knows || unknown)
+                    sells.Add(t);
+            }
+            if (sells.Count == 0) continue;
+
+            int dist = Functions.MaxDistance(_currentLocation, new Point(e.X, e.Y));
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                entry = e;
+                location = new Point(e.X, e.Y);
+                matchedTypes = sells;
+            }
+        }
+
+        if (entry != null)
+        {
+            foreach (var kv in _npcEntries)
+            {
+                if (kv.Value == entry)
+                {
+                    id = kv.Key;
+                    break;
+                }
+            }
+        }
+
+        return entry != null;
+    }
+
     public async Task SellItemsToNpcAsync(uint npcId, IReadOnlyList<UserItem> items)
     {
         var entry = await ResolveNpcEntryAsync(npcId);

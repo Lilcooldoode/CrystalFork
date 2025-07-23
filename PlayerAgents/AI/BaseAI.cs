@@ -350,19 +350,21 @@ public class BaseAI
         var keepSet = GetItemsToKeep(items);
         var groups = items.Where(i => !keepSet.Contains(i))
             .GroupBy(i => i!.Info!.Type)
-            .ToList();
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         _sellingItems = true;
         Client.IgnoreNpcInteractions = true;
-        foreach (var group in groups)
+        while (groups.Count > 0)
         {
-            if (!Client.TryFindNearestNpc(group.Key, out var npcId, out var loc, out var entry))
-                continue;
+            var types = groups.Keys.ToList();
+            if (!Client.TryFindNearestNpc(types, out var npcId, out var loc, out var entry, out var matchedTypes))
+                break;
 
-            Console.WriteLine($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {group.Count()} items");
+            int count = matchedTypes.Sum(t => groups[t].Count);
+            Console.WriteLine($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {count} items");
 
             var map = Client.CurrentMap;
-            if (map == null) continue;
+            if (map == null) break;
             bool foundPath = true;
             while (Functions.MaxDistance(Client.CurrentLocation, loc) > 6)
             {
@@ -381,21 +383,24 @@ public class BaseAI
 
             if (foundPath && Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
             {
-                // ensure the NPC object id is known once we're nearby
                 if (npcId == 0)
-                    Client.TryFindNearestNpc(group.Key, out npcId, out _, out entry);
+                    Client.TryFindNearestNpc(types, out npcId, out _, out entry, out matchedTypes);
 
                 if (npcId == 0 || entry != null)
                     npcId = await Client.ResolveNpcIdAsync(entry);
 
                 if (npcId != 0)
                 {
-                    await Client.SellItemsToNpcAsync(npcId, group.Where(i => i != null).Select(i => i!).ToList());
+                    var sellItems = matchedTypes.SelectMany(t => groups[t]).Where(i => i != null).ToList();
+                    await Client.SellItemsToNpcAsync(npcId, sellItems);
                     Console.WriteLine($"Finished selling to {entry?.Name ?? npcId.ToString()}");
+                    foreach (var t in matchedTypes)
+                        groups.Remove(t);
                 }
                 else
                 {
-                    Console.WriteLine($"Could not find NPC to sell {group.Key} items");
+                    Console.WriteLine($"Could not find NPC to sell items");
+                    break;
                 }
             }
 
