@@ -194,9 +194,8 @@ public class BaseAI
             {
                 if (obj.Dead) continue;
                 if (IgnoredAIs.Contains(obj.AI)) continue;
-                if (obj.EngagedWith.HasValue && obj.EngagedWith.Value != Client.ObjectId &&
-                    DateTime.UtcNow - obj.LastEngagedTime < TimeSpan.FromSeconds(5))
-                    continue;
+                // previously ignored monsters that were recently engaged with another player
+                // now we attempt to attack them unless we cannot reach them
                 int dist = Functions.MaxDistance(current, obj.Location);
                 if (dist < monsterDist)
                 {
@@ -495,8 +494,7 @@ public class BaseAI
             }
             if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
             {
-                if (_currentTarget.Dead ||
-                    (_currentTarget.EngagedWith.HasValue && _currentTarget.EngagedWith.Value != Client.ObjectId))
+                if (_currentTarget.Dead)
                     _nextTargetSwitchTime = DateTime.MinValue;
             }
             int distance;
@@ -504,7 +502,6 @@ public class BaseAI
 
             if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster &&
                 !_currentTarget.Dead &&
-                (_currentTarget.EngagedWith == null || _currentTarget.EngagedWith.Value == Client.ObjectId) &&
                 Client.TrackedObjects.ContainsKey(_currentTarget.Id) &&
                 closest != null && closest.Type == ObjectType.Monster &&
                 closest.Id != _currentTarget.Id &&
@@ -550,7 +547,16 @@ public class BaseAI
                     if (distance > 1)
                     {
                         var path = await FindPathAsync(map, current, closest.Location, closest.Id);
-                        await MoveAlongPathAsync(path, closest.Location);
+                        if (path.Count == 0)
+                        {
+                            // ignore unreachable targets
+                            _currentTarget = null;
+                            _nextTargetSwitchTime = DateTime.MinValue;
+                        }
+                        else
+                        {
+                            await MoveAlongPathAsync(path, closest.Location);
+                        }
                     }
                     else if (DateTime.UtcNow >= _nextAttackTime)
                     {
