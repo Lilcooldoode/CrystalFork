@@ -4,6 +4,7 @@ using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Threading;
 using Shared;
 
 public sealed partial class GameClient
@@ -52,7 +53,8 @@ public sealed partial class GameClient
 
     public async Task SellItemsToNpcAsync(uint npcId, IReadOnlyList<UserItem> items)
     {
-        if (!_npcEntries.TryGetValue(npcId, out var entry)) return;
+        var entry = await ResolveNpcEntryAsync(npcId);
+        if (entry == null) return;
         var interaction = new NPCInteraction(this, npcId);
         var page = await interaction.BeginAsync();
         string[] sellKeys = { "@BUYSELLNEW", "@BUYSELL", "@SELL" };
@@ -87,6 +89,16 @@ public sealed partial class GameClient
             }
             await Task.Delay(100);
         }
+
+        // clear out any leftover npc responses that may arrive after selling
+        try
+        {
+            using var cts = new System.Threading.CancellationTokenSource(200);
+            await WaitForLatestNpcResponseAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
     }
 
     private void AddItem(UserItem item)
@@ -119,5 +131,36 @@ public sealed partial class GameClient
                 break;
             }
         }
+    }
+
+    private async Task<NpcEntry?> ResolveNpcEntryAsync(uint npcId, int timeoutMs = 2000)
+    {
+        int waited = 0;
+        while (waited < timeoutMs)
+        {
+            if (_npcEntries.TryGetValue(npcId, out var e))
+                return e;
+            await Task.Delay(50);
+            waited += 50;
+        }
+        return null;
+    }
+
+    public async Task<uint> ResolveNpcIdAsync(NpcEntry entry, int timeoutMs = 2000)
+    {
+        int waited = 0;
+        while (waited < timeoutMs)
+        {
+            foreach (var kv in _npcEntries)
+            {
+                if (kv.Value == entry)
+                    return kv.Key;
+            }
+
+            await Task.Delay(50);
+            waited += 50;
+        }
+
+        return 0u;
     }
 }

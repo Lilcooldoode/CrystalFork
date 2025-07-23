@@ -331,8 +331,22 @@ public class BaseAI
 
             if (foundPath && Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
             {
-                await Client.SellItemsToNpcAsync(npcId, group.Where(i => i != null).Select(i => i!).ToList());
-                Console.WriteLine($"Finished selling to {entry?.Name ?? npcId.ToString()}");
+                // ensure the NPC object id is known once we're nearby
+                if (npcId == 0)
+                    Client.TryFindNearestNpc(group.Key, out npcId, out _, out entry);
+
+                if (npcId == 0 && entry != null)
+                    npcId = await Client.ResolveNpcIdAsync(entry);
+
+                if (npcId != 0)
+                {
+                    await Client.SellItemsToNpcAsync(npcId, group.Where(i => i != null).Select(i => i!).ToList());
+                    Console.WriteLine($"Finished selling to {entry?.Name ?? npcId.ToString()}");
+                }
+                else
+                {
+                    Console.WriteLine($"Could not find NPC to sell {group.Key} items");
+                }
             }
 
             if (!foundPath) break; // resume normal behaviour if we cannot reach npc
