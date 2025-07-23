@@ -623,8 +623,13 @@ public class BaseAI
 
                         if (_lostTargetPath != null && _lostTargetPath.Count > 0)
                         {
-                            await MoveAlongPathAsync(_lostTargetPath, _lostTargetLocation.Value);
-                            if (_lostTargetPath.Count <= 1)
+                            bool moved = await MoveAlongPathAsync(_lostTargetPath, _lostTargetLocation.Value);
+                            if (!moved)
+                            {
+                                _lostTargetPath = null;
+                                _nextPathFindTime = DateTime.MinValue;
+                            }
+                            else if (_lostTargetPath.Count <= 1)
                             {
                                 _lostTargetPath = null;
                                 _nextPathFindTime = DateTime.MinValue;
@@ -662,8 +667,14 @@ public class BaseAI
 
                     if (_currentRoamPath != null && _currentRoamPath.Count > 0)
                     {
-                        await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
-                        if (_currentRoamPath.Count <= 1)
+                        bool moved = await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
+                        if (!moved)
+                        {
+                            _currentRoamPath = null;
+                            _searchDestination = GetRandomPoint(map, Random, current, 50);
+                            _nextPathFindTime = DateTime.MinValue;
+                        }
+                        else if (_currentRoamPath.Count <= 1)
                         {
                             _currentRoamPath = null;
                             _nextPathFindTime = DateTime.MinValue;
