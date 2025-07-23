@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.IO;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using System.Threading;
 using ClientPackets;
 using Shared;
 using System.Linq;
@@ -18,6 +19,9 @@ public sealed class Config
 {
     public string ServerIP { get; init; } = "127.0.0.1";
     public int ServerPort { get; init; } = 7000;
+
+    public int PlayerCount { get; set; }
+    public int ConcurrentLogins { get; set; } = 50;
 
     // Single agent fields for backwards compatibility
     public string AccountID { get; set; } = string.Empty;
@@ -150,9 +154,33 @@ internal class Program
             var expRateFile = Path.Combine(AppContext.BaseDirectory, "exp_rate_memory.json");
             var expRateMemory = new MapExpRateMemoryBank(expRateFile);
 
-            var agentConfigs = (config.Agents != null && config.Agents.Count > 0)
-                ? config.Agents
-                : new List<AgentConfig> { new AgentConfig { AccountID = config.AccountID, Password = config.Password, CharacterName = config.CharacterName } };
+            List<AgentConfig> agentConfigs;
+            if (config.PlayerCount > 0)
+            {
+                agentConfigs = Enumerable.Range(1, config.PlayerCount)
+                    .Select(i => new AgentConfig
+                    {
+                        AccountID = $"acc{i:D3}",
+                        Password = $"pass{i:D3}",
+                        CharacterName = $"hero{i}"
+                    }).ToList();
+            }
+            else if (config.Agents != null && config.Agents.Count > 0)
+            {
+                agentConfigs = config.Agents;
+            }
+            else
+            {
+                agentConfigs = new List<AgentConfig>
+                {
+                    new AgentConfig
+                    {
+                        AccountID = config.AccountID,
+                        Password = config.Password,
+                        CharacterName = config.CharacterName
+                    }
+                };
+            }
 
             SetConsoleFontSize(5);
 
@@ -168,9 +196,12 @@ internal class Program
                 logger.RegisterAgent(string.IsNullOrEmpty(agent.CharacterName) ? agent.AccountID : agent.CharacterName);
             }
 
+            var semaphore = new SemaphoreSlim(config.ConcurrentLogins > 0 ? config.ConcurrentLogins : 50);
             var tasks = new List<Task>();
             foreach (var agent in agentConfigs)
             {
+                await semaphore.WaitAsync();
+
                 var agentConfig = new Config
                 {
                     ServerIP = config.ServerIP,
@@ -179,7 +210,19 @@ internal class Program
                     Password = agent.Password,
                     CharacterName = agent.CharacterName
                 };
-                tasks.Add(RunAgentAsync(agentConfig, npcMemory, movementMemory, expRateMemory, logger));
+
+                tasks.Add(Task.Run(async () =>
+                {
+                    try
+                    {
+                        await RunAgentAsync(agentConfig, npcMemory, movementMemory, expRateMemory, logger, semaphore);
+                    }
+                    catch
+                    {
+                        semaphore.Release();
+                        throw;
+                    }
+                }));
             }
 
             await Task.WhenAll(tasks);
@@ -193,12 +236,19 @@ internal class Program
         }
     }
 
-    private static async Task RunAgentAsync(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory, IAgentLogger logger)
+    private static async Task RunAgentAsync(
+        Config config,
+        NpcMemoryBank npcMemory,
+        MapMovementMemoryBank movementMemory,
+        MapExpRateMemoryBank expRateMemory,
+        IAgentLogger logger,
+        SemaphoreSlim? loginLimiter = null)
     {
         var client = new GameClient(config, npcMemory, movementMemory, expRateMemory, logger);
         client.UpdateAction("connecting");
         await client.ConnectAsync();
         await client.LoginAsync();
+        loginLimiter?.Release();
 
         var playerClass = await client.WaitForClassAsync();
         BaseAI ai = playerClass switch

@@ -1,11 +1,6 @@
 {
   "ServerIP": "127.0.0.1",
   "ServerPort": 7000,
-  "Agents": [
-    {
-      "AccountID": "",
-      "Password": "",
-      "CharacterName": ""
-    }
-  ]
+  "PlayerCount": 1,
+  "ConcurrentLogins": 50
 }
