@@ -20,6 +20,13 @@ public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
             _lookup[(e.MapFile, e.Class, e.Level)] = e;
     }
 
+    protected override void OnLoaded()
+    {
+        _lookup.Clear();
+        foreach (var e in _entries)
+            _lookup[(e.MapFile, e.Class, e.Level)] = e;
+    }
+
     public void AddRate(string mapFile, MirClass playerClass, ushort level, double expPerHour)
     {
         bool added = false;

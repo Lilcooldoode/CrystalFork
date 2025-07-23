@@ -23,6 +23,13 @@ public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
             _keys.Add(Key(e.SourceMap, e.SourceX, e.SourceY, e.DestinationMap, e.DestinationX, e.DestinationY));
     }
 
+    protected override void OnLoaded()
+    {
+        _keys.Clear();
+        foreach (var e in _entries)
+            _keys.Add(Key(e.SourceMap, e.SourceX, e.SourceY, e.DestinationMap, e.DestinationX, e.DestinationY));
+    }
+
     private static string Key(string src, int sx, int sy, string dest, int dx, int dy) =>
         $"{src}:{sx}:{sy}:{dest}:{dx}:{dy}";
 

@@ -33,6 +33,10 @@ public abstract class MemoryBankBase<TEntry>
         }
     }
 
+    protected virtual void OnLoaded()
+    {
+    }
+
     private void Load()
     {
         List<TEntry>? items = null;
@@ -57,6 +61,7 @@ public abstract class MemoryBankBase<TEntry>
             _entries.Clear();
             if (items != null)
                 _entries.AddRange(items);
+            OnLoaded();
         }
     }
 
@@ -101,6 +106,7 @@ public abstract class MemoryBankBase<TEntry>
     {
         lock (_lock)
         {
+            ReloadIfUpdated();
             Save();
         }
     }

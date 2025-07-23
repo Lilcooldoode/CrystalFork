@@ -30,6 +30,13 @@ public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>
             _lookup[(e.Name, e.MapFile, e.X, e.Y)] = e;
     }
 
+    protected override void OnLoaded()
+    {
+        _lookup.Clear();
+        foreach (var e in _entries)
+            _lookup[(e.Name, e.MapFile, e.X, e.Y)] = e;
+    }
+
     public NpcEntry AddNpc(string name, string mapFile, Point location)
     {
         bool added = false;
