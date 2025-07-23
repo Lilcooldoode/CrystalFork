@@ -75,7 +75,8 @@ public sealed partial class GameClient
         {
             if (item.Info == null) continue;
             _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
-            await SellItemAsync(item);
+            var count = item.Count;
+            await SellItemAsync(item.UniqueID, count);
             try
             {
                 using var cts = new System.Threading.CancellationTokenSource(2000);

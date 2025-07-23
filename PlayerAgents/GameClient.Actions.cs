@@ -218,11 +218,16 @@ public sealed partial class GameClient
 
     public async Task SellItemAsync(UserItem item)
     {
+        await SellItemAsync(item.UniqueID, item.Count);
+    }
+
+    public async Task SellItemAsync(ulong uniqueId, ushort count)
+    {
         if (_stream == null) return;
         var sell = new C.SellItem
         {
-            UniqueID = item.UniqueID,
-            Count = item.Count
+            UniqueID = uniqueId,
+            Count = count
         };
         await SendAsync(sell);
     }
