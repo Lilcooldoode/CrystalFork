@@ -342,14 +342,7 @@ public sealed partial class GameClient
                 Bind(gi.Item);
                 if (_inventory != null)
                 {
-                    for (int i = 0; i < _inventory.Length; i++)
-                    {
-                        if (_inventory[i] == null)
-                        {
-                            _inventory[i] = gi.Item;
-                            break;
-                        }
-                    }
+                    AddItem(gi.Item);
                 }
                 _lastPickedItem = gi.Item;
                 if (gi.Item.Info != null)

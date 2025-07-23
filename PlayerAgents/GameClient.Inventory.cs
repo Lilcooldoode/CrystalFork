@@ -88,4 +88,36 @@ public sealed partial class GameClient
             await Task.Delay(100);
         }
     }
+
+    private void AddItem(UserItem item)
+    {
+        if (_inventory == null) return;
+
+        if (item.Info != null && item.Info.StackSize > 1)
+        {
+            for (int i = 0; i < _inventory.Length; i++)
+            {
+                var temp = _inventory[i];
+                if (temp == null || temp.Info != item.Info || temp.Count >= temp.Info.StackSize) continue;
+
+                if (item.Count + temp.Count <= temp.Info.StackSize)
+                {
+                    temp.Count += item.Count;
+                    return;
+                }
+
+                item.Count -= (ushort)(temp.Info.StackSize - temp.Count);
+                temp.Count = temp.Info.StackSize;
+            }
+        }
+
+        for (int i = 0; i < _inventory.Length; i++)
+        {
+            if (_inventory[i] == null)
+            {
+                _inventory[i] = item;
+                break;
+            }
+        }
+    }
 }
