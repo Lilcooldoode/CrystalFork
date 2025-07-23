@@ -50,8 +50,10 @@ public class BaseAI
     private DateTime _nextPotionTime = DateTime.MinValue;
     
     private readonly Dictionary<(Point Location, string Name), DateTime> _itemRetryTimes = new();
+    private readonly Dictionary<uint, DateTime> _monsterIgnoreTimes = new();
     private static readonly TimeSpan ItemRetryDelay = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan DroppedItemRetryDelay = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MonsterIgnoreDelay = TimeSpan.FromSeconds(10);
     private bool _sentRevive;
     private bool _sellingItems;
 
@@ -65,12 +67,26 @@ public class BaseAI
         return score;
     }
 
-    private static Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random)
+    private static Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random, Point origin, int radius)
     {
         var cells = map.WalkableCells;
-        if (cells.Count == 0)
-            return new Point(0, 0);
-        return cells[random.Next(cells.Count)];
+        if (cells.Count > 0)
+        {
+            if (radius > 0)
+            {
+                var subset = cells.Where(c => Functions.MaxDistance(c, origin) <= radius).ToList();
+                if (subset.Count > 0)
+                    return subset[random.Next(subset.Count)];
+            }
+            return cells[random.Next(cells.Count)];
+        }
+
+        // Fallback for maps without walk data
+        int width = Math.Max(map.Width, 1);
+        int height = Math.Max(map.Height, 1);
+        int x = Math.Clamp(origin.X + random.Next(-10, 11), 0, width - 1);
+        int y = Math.Clamp(origin.Y + random.Next(-10, 11), 0, height - 1);
+        return new Point(x, y);
     }
 
     private UserItem? GetBestItemForSlot(EquipmentSlot slot, IEnumerable<UserItem?> inventory, UserItem? current)
@@ -192,6 +208,7 @@ public class BaseAI
         {
             if (obj.Type == ObjectType.Monster)
             {
+                if (_monsterIgnoreTimes.TryGetValue(obj.Id, out var ignore) && DateTime.UtcNow < ignore) continue;
                 if (obj.Dead) continue;
                 if (IgnoredAIs.Contains(obj.AI)) continue;
                 // previously ignored monsters that were recently engaged with another player
@@ -265,9 +282,9 @@ public class BaseAI
         }
     }
 
-    private async Task MoveAlongPathAsync(List<Point> path, Point destination)
+    private async Task<bool> MoveAlongPathAsync(List<Point> path, Point destination)
     {
-        if (path.Count <= 1) return;
+        if (path.Count <= 1) return true;
 
         var current = Client.CurrentLocation;
 
@@ -279,7 +296,7 @@ public class BaseAI
             {
                 await Client.RunAsync(dir);
                 path.RemoveRange(0, 2);
-                return;
+                return true;
             }
         }
 
@@ -290,15 +307,20 @@ public class BaseAI
             {
                 await Client.WalkAsync(dir);
                 path.RemoveAt(0);
-                return;
+                return true;
             }
         }
         else
         {
             var dir = Functions.DirectionFromPoint(current, destination);
             if (Client.CanWalk(dir))
+            {
                 await Client.WalkAsync(dir);
+                return true;
+            }
         }
+
+        return false;
     }
 
     private static bool MatchesDesiredItem(UserItem item, DesiredItem desired)
@@ -476,6 +498,10 @@ public class BaseAI
                 if (DateTime.UtcNow >= kv.Value)
                     _itemRetryTimes.Remove(kv.Key);
 
+            foreach (var kv in _monsterIgnoreTimes.ToList())
+                if (DateTime.UtcNow >= kv.Value)
+                    _monsterIgnoreTimes.Remove(kv.Key);
+
             var map = Client.CurrentMap;
             if (map == null || !Client.IsMapLoaded)
             {
@@ -530,7 +556,12 @@ public class BaseAI
                     if (distance > 0)
                     {
                         var path = await FindPathAsync(map, current, closest.Location, closest.Id, 0);
-                        await MoveAlongPathAsync(path, closest.Location);
+                        bool moved = path.Count > 0 && await MoveAlongPathAsync(path, closest.Location);
+                        if (!moved)
+                        {
+                            _itemRetryTimes[(closest.Location, closest.Name)] = DateTime.UtcNow + ItemRetryDelay;
+                            _currentTarget = null;
+                        }
                     }
                     else
                     {
@@ -547,15 +578,13 @@ public class BaseAI
                     if (distance > 1)
                     {
                         var path = await FindPathAsync(map, current, closest.Location, closest.Id);
-                        if (path.Count == 0)
+                        bool moved = path.Count > 0 && await MoveAlongPathAsync(path, closest.Location);
+                        if (!moved)
                         {
                             // ignore unreachable targets
+                            _monsterIgnoreTimes[closest.Id] = DateTime.UtcNow + MonsterIgnoreDelay;
                             _currentTarget = null;
                             _nextTargetSwitchTime = DateTime.MinValue;
-                        }
-                        else
-                        {
-                            await MoveAlongPathAsync(path, closest.Location);
                         }
                     }
                     else if (DateTime.UtcNow >= _nextAttackTime)
@@ -610,7 +639,7 @@ public class BaseAI
                         Functions.MaxDistance(current, _searchDestination.Value) <= 1 ||
                         !map.IsWalkable(_searchDestination.Value.X, _searchDestination.Value.Y))
                     {
-                        _searchDestination = GetRandomPoint(map, Random);
+                        _searchDestination = GetRandomPoint(map, Random, current, 50);
                         _currentRoamPath = null;
                         _nextPathFindTime = DateTime.MinValue;
                         Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
@@ -624,7 +653,7 @@ public class BaseAI
                             _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
                             if (_currentRoamPath.Count == 0)
                             {
-                                _searchDestination = GetRandomPoint(map, Random);
+                                _searchDestination = GetRandomPoint(map, Random, current, 50);
                                 await Task.Delay(WalkDelay);
                                 continue;
                             }
