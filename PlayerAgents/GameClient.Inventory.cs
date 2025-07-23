@@ -129,15 +129,7 @@ public sealed partial class GameClient
             _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
             var count = item.Count;
             await SellItemAsync(item.UniqueID, count);
-            try
-            {
-                using var cts = new System.Threading.CancellationTokenSource(2000);
-                await WaitForLatestNpcResponseAsync(cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            await Task.Delay(100);
+            await Task.Delay(500);
         }
 
         // clear out any leftover npc responses that may arrive after selling
