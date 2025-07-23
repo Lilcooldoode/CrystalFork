@@ -37,7 +37,7 @@ public static class PathFinder
         };
 
         int steps = 0;
-        const int maxSteps = 20000;
+        int maxSteps = Math.Max(width * height, 20000);
         while (open.Count > 0)
         {
             var current = open.Dequeue().Point;

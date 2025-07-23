@@ -335,7 +335,7 @@ public class BaseAI
                 if (npcId == 0)
                     Client.TryFindNearestNpc(group.Key, out npcId, out _, out entry);
 
-                if (npcId == 0 && entry != null)
+                if (npcId == 0 || entry != null)
                     npcId = await Client.ResolveNpcIdAsync(entry);
 
                 if (npcId != 0)
