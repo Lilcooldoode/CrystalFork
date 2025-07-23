@@ -350,6 +350,7 @@ public class BaseAI
             .ToDictionary(g => g.Key, g => g.ToList());
 
         _sellingItems = true;
+        Client.UpdateAction("selling items");
         Client.IgnoreNpcInteractions = true;
         while (groups.Count > 0)
         {
@@ -406,6 +407,7 @@ public class BaseAI
         Client.IgnoreNpcInteractions = false;
         Client.ResumeNpcInteractions();
         _sellingItems = false;
+        Client.UpdateAction("roaming...");
     }
 
     public virtual async Task RunAsync()
@@ -580,6 +582,19 @@ public class BaseAI
                 }
             }
 
+            if (_sellingItems)
+            {
+                Client.UpdateAction("selling items");
+            }
+            else if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
+            {
+                Client.UpdateAction($"attacking {_currentTarget.Name}");
+            }
+            else
+            {
+                Client.UpdateAction("roaming...");
+            }
+
             await Task.Delay(WalkDelay);
         }
     }
@@ -588,6 +603,7 @@ public class BaseAI
     {
         if (!Client.Dead) return false;
         _currentTarget = null;
+        Client.UpdateAction("reviving");
         if (!_sentRevive)
         {
             await Client.TownReviveAsync();
@@ -601,6 +617,7 @@ public class BaseAI
     private async Task<bool> HandleHarvestingAsync()
     {
         if (!Client.IsHarvesting) return false;
+        Client.UpdateAction("harvesting");
         var current = Client.CurrentLocation;
         var target = FindClosestTarget(current, out int dist);
         if (target != null && target.Type == ObjectType.Monster && dist <= 1)

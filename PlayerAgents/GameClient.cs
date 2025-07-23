@@ -18,6 +18,7 @@ public sealed partial class GameClient
     private readonly NpcMemoryBank _npcMemory;
     private readonly MapMovementMemoryBank _movementMemory;
     private readonly MapExpRateMemoryBank _expRateMemory;
+    private readonly IAgentLogger? _logger;
     private bool _suppressNextMovement;
     private TcpClient? _client;
     private NetworkStream? _stream;
@@ -30,9 +31,17 @@ public sealed partial class GameClient
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
     private string _playerName = string.Empty;
+    private string _currentAction = string.Empty;
     private uint _objectId;
     private string _currentMapFile = string.Empty;
+    private string _currentMapName = string.Empty;
     private PlayerAgents.Map.MapData? _mapData;
+
+    public string PlayerName => string.IsNullOrEmpty(_playerName) ? _config.CharacterName : _playerName;
+    public string CurrentAction => _currentAction;
+    public ushort Level => _level;
+    public string CurrentMapFile => _currentMapFile;
+    public string CurrentMapName => _currentMapName;
 
     private LightSetting _timeOfDay = LightSetting.Normal;
 
@@ -187,12 +196,33 @@ public sealed partial class GameClient
     public int HP => _hp;
     public int MP => _mp;
 
-    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory)
+    private void ReportStatus()
+    {
+        var status = new AgentStatus
+        {
+            Level = _level,
+            MapFile = _currentMapFile,
+            MapName = _currentMapName,
+            X = _currentLocation.X,
+            Y = _currentLocation.Y,
+            Action = _currentAction
+        };
+        _logger?.UpdateStatus(PlayerName, status);
+    }
+
+    public void UpdateAction(string action)
+    {
+        _currentAction = action;
+        ReportStatus();
+    }
+
+    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory, IAgentLogger? logger = null)
     {
         _config = config;
         _npcMemory = npcMemory;
         _movementMemory = movementMemory;
         _expRateMemory = expRateMemory;
+        _logger = logger;
     }
 
     private void StartMapExpTracking(string mapFile)

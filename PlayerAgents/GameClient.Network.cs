@@ -128,8 +128,10 @@ public sealed partial class GameClient
                 break;
             case S.MapInformation mi:
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mi.FileName + ".map");
+                _currentMapName = mi.Title;
                 _ = LoadMapAsync();
                 StartMapExpTracking(_currentMapFile);
+                ReportStatus();
                 break;
             case S.MapChanged mc:
                 if (!string.IsNullOrEmpty(_currentMapFile) && !_suppressNextMovement && !_dead)
@@ -139,12 +141,14 @@ public sealed partial class GameClient
                 FinalizeMapExpRate();
                 _suppressNextMovement = false;
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
+                _currentMapName = mc.Title;
                 _currentLocation = mc.Location;
                 _trackedObjects.Clear();
                 _ = LoadMapAsync();
                 StartMapExpTracking(_currentMapFile);
                 if (_awaitingHarvest)
                     _harvestComplete = true;
+                ReportStatus();
                 break;
             case S.UserInformation info:
                 _objectId = info.ObjectID;
@@ -165,6 +169,7 @@ public sealed partial class GameClient
                 Console.WriteLine($"Logged in as {_playerName}");
                 Console.WriteLine($"I am currently at location {_currentLocation.X}, {_currentLocation.Y}");
                 _classTcs.TrySetResult(info.Class);
+                ReportStatus();
                 break;
             case S.UserLocation loc:
                 if (loc.Location == _currentLocation)
@@ -173,6 +178,7 @@ public sealed partial class GameClient
                     _canRun = false;
                 }
                 _currentLocation = loc.Location;
+                ReportStatus();
                 break;
             case S.TimeOfDay tod:
                 _timeOfDay = tod.Lights;
@@ -362,6 +368,7 @@ public sealed partial class GameClient
                 _level = lc.Level;
                 _experience = lc.Experience;
                 MarkStatsDirty();
+                ReportStatus();
                 break;
             case S.Chat chat:
                 HandleTradeFailChat(chat.Message);

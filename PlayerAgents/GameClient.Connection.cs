@@ -11,7 +11,7 @@ public sealed partial class GameClient
         _client = new TcpClient { NoDelay = true };
         await _client.ConnectAsync(_config.ServerIP, _config.ServerPort);
         _stream = _client.GetStream();
-        Console.WriteLine("Connected to server");
+        UpdateAction("connected");
         _canRun = false;
         FireAndForget(Task.Run(ReceiveLoop));
         FireAndForget(Task.Run(KeepAliveLoop));
@@ -20,7 +20,7 @@ public sealed partial class GameClient
     public async Task LoginAsync()
     {
         if (_stream == null) return;
-        Console.WriteLine("Logging in...");
+        UpdateAction("logging in");
         var ver = new C.ClientVersion { VersionHash = Array.Empty<byte>() };
         await RandomStartupDelayAsync();
         await SendAsync(ver);
@@ -33,7 +33,7 @@ public sealed partial class GameClient
     private async Task CreateAccountAsync()
     {
         if (_stream == null) return;
-        Console.WriteLine($"Creating account '{_config.AccountID}'...");
+        UpdateAction("creating account");
         var acc = new C.NewAccount
         {
             AccountID = _config.AccountID,
@@ -51,7 +51,7 @@ public sealed partial class GameClient
     private async Task CreateCharacterAsync()
     {
         if (_stream == null) return;
-        Console.WriteLine($"Creating character '{_config.CharacterName}'...");
+        UpdateAction("creating character");
         var chr = new C.NewCharacter
         {
             Name = _config.CharacterName,

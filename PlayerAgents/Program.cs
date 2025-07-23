@@ -1,19 +1,87 @@
 using System.Text.Json;
 using System.IO;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using ClientPackets;
 using Shared;
+using System.Linq;
+using System.Runtime.InteropServices;
 
-public sealed class Config
+public sealed class AgentConfig
 {
-    public string ServerIP { get; init; } = "127.0.0.1";
-    public int ServerPort { get; init; } = 7000;
     public string AccountID { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
     public string CharacterName { get; set; } = string.Empty;
 }
 
+public sealed class Config
+{
+    public string ServerIP { get; init; } = "127.0.0.1";
+    public int ServerPort { get; init; } = 7000;
+
+    // Single agent fields for backwards compatibility
+    public string AccountID { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string CharacterName { get; set; } = string.Empty;
+
+    public List<AgentConfig>? Agents { get; set; }
+}
+
 internal class Program
 {
+    private const int STD_OUTPUT_HANDLE = -11;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct COORD
+    {
+        public short X;
+        public short Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct CONSOLE_FONT_INFO_EX
+    {
+        public uint cbSize;
+        public uint nFont;
+        public COORD dwFontSize;
+        public int FontFamily;
+        public int FontWeight;
+
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string FaceName;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetCurrentConsoleFontEx(IntPtr consoleOutput, bool maximumWindow, ref CONSOLE_FONT_INFO_EX consoleCurrentFontEx);
+
+    private static void SetConsoleFontSize(short size)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+
+        try
+        {
+            var handle = GetStdHandle(STD_OUTPUT_HANDLE);
+            var info = new CONSOLE_FONT_INFO_EX
+            {
+                cbSize = (uint)Marshal.SizeOf<CONSOLE_FONT_INFO_EX>(),
+                FaceName = "Consolas",
+                FontFamily = 0,
+                FontWeight = 400,
+                dwFontSize = new COORD { X = 0, Y = size }
+            };
+
+            SetCurrentConsoleFontEx(handle, false, ref info);
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
     private static void WaitForExit()
     {
         Console.WriteLine("Press any key to exit...");
@@ -82,27 +150,68 @@ internal class Program
             var expRateFile = Path.Combine(AppContext.BaseDirectory, "exp_rate_memory.json");
             var expRateMemory = new MapExpRateMemoryBank(expRateFile);
 
-            var client = new GameClient(config, npcMemory, movementMemory, expRateMemory);
-            await client.ConnectAsync();
-            await client.LoginAsync();
+            var agentConfigs = (config.Agents != null && config.Agents.Count > 0)
+                ? config.Agents
+                : new List<AgentConfig> { new AgentConfig { AccountID = config.AccountID, Password = config.Password, CharacterName = config.CharacterName } };
 
-            var playerClass = await client.WaitForClassAsync();
-            BaseAI ai = playerClass switch
+            SetConsoleFontSize(5);
+
+            IAgentLogger logger = agentConfigs.Count > 1
+                ? new SummaryAgentLogger() as IAgentLogger
+                : new ConsoleAgentLogger();
+
+            if (agentConfigs.Count > 1)
+                Console.SetOut(TextWriter.Null);
+
+            foreach (var agent in agentConfigs)
             {
-                MirClass.Warrior => new WarriorAI(client),
-                MirClass.Wizard => new WizardAI(client),
-                MirClass.Taoist => new TaoistAI(client),
-                MirClass.Assassin => new AssassinAI(client),
-                MirClass.Archer => new ArcherAI(client),
-                _ => new BaseAI(client)
-            };
+                logger.RegisterAgent(string.IsNullOrEmpty(agent.CharacterName) ? agent.AccountID : agent.CharacterName);
+            }
 
-            await ai.RunAsync();
+            var tasks = new List<Task>();
+            foreach (var agent in agentConfigs)
+            {
+                var agentConfig = new Config
+                {
+                    ServerIP = config.ServerIP,
+                    ServerPort = config.ServerPort,
+                    AccountID = agent.AccountID,
+                    Password = agent.Password,
+                    CharacterName = agent.CharacterName
+                };
+                tasks.Add(RunAgentAsync(agentConfig, npcMemory, movementMemory, expRateMemory, logger));
+            }
+
+            await Task.WhenAll(tasks);
+            if (logger is IDisposable d)
+                d.Dispose();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Fatal error: {ex}");
             WaitForExit();
         }
+    }
+
+    private static async Task RunAgentAsync(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory, IAgentLogger logger)
+    {
+        var client = new GameClient(config, npcMemory, movementMemory, expRateMemory, logger);
+        client.UpdateAction("connecting");
+        await client.ConnectAsync();
+        await client.LoginAsync();
+
+        var playerClass = await client.WaitForClassAsync();
+        BaseAI ai = playerClass switch
+        {
+            MirClass.Warrior => new WarriorAI(client),
+            MirClass.Wizard => new WizardAI(client),
+            MirClass.Taoist => new TaoistAI(client),
+            MirClass.Assassin => new AssassinAI(client),
+            MirClass.Archer => new ArcherAI(client),
+            _ => new BaseAI(client)
+        };
+
+        client.UpdateAction("running AI");
+        await ai.RunAsync();
     }
 }
