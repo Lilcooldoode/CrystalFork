@@ -359,6 +359,7 @@ public sealed partial class GameClient
             if (item == null || item.Info == null) continue;
             if (item.CurrentDura == item.MaxDura) continue;
             if (seen.Contains(item.Info.Type)) continue;
+            seen.Add(item.Info.Type);
             _pendingRepairChecks[item.UniqueID] = (entry, item.Info.Type);
             Console.WriteLine($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
             await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
