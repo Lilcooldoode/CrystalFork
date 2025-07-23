@@ -15,6 +15,8 @@ public class BaseAI
     private Point? _lostTargetLocation;
     private DateTime _nextTargetSwitchTime = DateTime.MinValue;
     private List<Point>? _currentRoamPath;
+    private List<Point>? _lostTargetPath;
+    private DateTime _nextPathFindTime = DateTime.MinValue;
 
 
     protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
@@ -40,6 +42,7 @@ public class BaseAI
 
     protected virtual int WalkDelay => 600;
     protected virtual int AttackDelay => 1400;
+    protected virtual TimeSpan RoamPathFindInterval => TimeSpan.FromSeconds(2);
     protected virtual TimeSpan EquipCheckInterval => TimeSpan.FromSeconds(5);
     protected virtual IReadOnlyList<DesiredItem> DesiredItems => Array.Empty<DesiredItem>();
     private DateTime _nextEquipCheck = DateTime.UtcNow;
@@ -485,8 +488,10 @@ public class BaseAI
             if (_currentTarget != null && !Client.TrackedObjects.ContainsKey(_currentTarget.Id))
             {
                 _lostTargetLocation = _currentTarget.Location;
+                _lostTargetPath = null;
                 _currentRoamPath = null;
                 _currentTarget = null;
+                _nextPathFindTime = DateTime.MinValue;
             }
             if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
             {
@@ -513,6 +518,8 @@ public class BaseAI
             {
                 _currentRoamPath = null;
                 _lostTargetLocation = null;
+                _lostTargetPath = null;
+                _nextPathFindTime = DateTime.MinValue;
                 if (_currentTarget?.Id != closest.Id)
                 {
                     Console.WriteLine($"I have targeted {closest.Name} at {closest.Location.X}, {closest.Location.Y}");
@@ -561,18 +568,32 @@ public class BaseAI
                     if (Functions.MaxDistance(current, _lostTargetLocation.Value) <= 0)
                     {
                         _lostTargetLocation = null;
+                        _lostTargetPath = null;
                     }
                     else
                     {
-                        _currentRoamPath = null;
-                        var path = await FindPathAsync(map, current, _lostTargetLocation.Value);
-                        if (path.Count > 0)
+                        if (_lostTargetPath == null || _lostTargetPath.Count <= 1)
                         {
-                            await MoveAlongPathAsync(path, _lostTargetLocation.Value);
+                            if (DateTime.UtcNow >= _nextPathFindTime)
+                            {
+                                _lostTargetPath = await FindPathAsync(map, current, _lostTargetLocation.Value);
+                                _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
+                                if (_lostTargetPath.Count == 0)
+                                {
+                                    _lostTargetLocation = null;
+                                    _lostTargetPath = null;
+                                }
+                            }
                         }
-                        else
+
+                        if (_lostTargetPath != null && _lostTargetPath.Count > 0)
                         {
-                            _lostTargetLocation = null;
+                            await MoveAlongPathAsync(_lostTargetPath, _lostTargetLocation.Value);
+                            if (_lostTargetPath.Count <= 1)
+                            {
+                                _lostTargetPath = null;
+                                _nextPathFindTime = DateTime.MinValue;
+                            }
                         }
                     }
                 }
@@ -585,23 +606,34 @@ public class BaseAI
                     {
                         _searchDestination = GetRandomPoint(map, Random);
                         _currentRoamPath = null;
+                        _nextPathFindTime = DateTime.MinValue;
                         Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
                     }
 
                     if (_currentRoamPath == null || _currentRoamPath.Count <= 1)
                     {
-                        _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value);
-                        if (_currentRoamPath.Count == 0)
+                        if (DateTime.UtcNow >= _nextPathFindTime)
                         {
-                            _searchDestination = GetRandomPoint(map, Random);
-                            await Task.Delay(WalkDelay);
-                            continue;
+                            _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value);
+                            _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
+                            if (_currentRoamPath.Count == 0)
+                            {
+                                _searchDestination = GetRandomPoint(map, Random);
+                                await Task.Delay(WalkDelay);
+                                continue;
+                            }
                         }
                     }
 
-                    await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
-                    if (_currentRoamPath.Count <= 1)
-                        _currentRoamPath = null;
+                    if (_currentRoamPath != null && _currentRoamPath.Count > 0)
+                    {
+                        await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
+                        if (_currentRoamPath.Count <= 1)
+                        {
+                            _currentRoamPath = null;
+                            _nextPathFindTime = DateTime.MinValue;
+                        }
+                    }
                 }
             }
 
