@@ -12,6 +12,7 @@ public class BaseAI
     protected static readonly Random Random = new();
     private TrackedObject? _currentTarget;
     private Point? _searchDestination;
+    private Point? _lostTargetLocation;
     private DateTime _nextTargetSwitchTime = DateTime.MinValue;
 
     protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
@@ -377,7 +378,7 @@ public class BaseAI
                 if (map == null) break;
             }
 
-            if (foundPath && Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
+            if (Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
             {
                 if (npcId == 0)
                     Client.TryFindNearestNpc(types, out npcId, out _, out entry, out matchedTypes);
@@ -466,6 +467,11 @@ public class BaseAI
             }
 
             current = Client.CurrentLocation;
+            if (_currentTarget != null && !Client.TrackedObjects.ContainsKey(_currentTarget.Id))
+            {
+                _lostTargetLocation = _currentTarget.Location;
+                _currentTarget = null;
+            }
             if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
             {
                 if (_currentTarget.Dead ||
@@ -489,6 +495,7 @@ public class BaseAI
 
             if (closest != null)
             {
+                _lostTargetLocation = null;
                 if (_currentTarget?.Id != closest.Id)
                 {
                     Console.WriteLine($"I have targeted {closest.Name} at {closest.Location.X}, {closest.Location.Y}");
@@ -532,22 +539,45 @@ public class BaseAI
             else
             {
                 _currentTarget = null;
-                if (_searchDestination == null ||
-                    Functions.MaxDistance(current, _searchDestination.Value) <= 1 ||
-                    !map.IsWalkable(_searchDestination.Value.X, _searchDestination.Value.Y))
+                if (_lostTargetLocation.HasValue)
                 {
-                    _searchDestination = GetRandomPoint(map, Random);
-                    Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
+                    if (Functions.MaxDistance(current, _lostTargetLocation.Value) <= 0)
+                    {
+                        _lostTargetLocation = null;
+                    }
+                    else
+                    {
+                        var path = await FindPathAsync(map, current, _lostTargetLocation.Value);
+                        if (path.Count > 0)
+                        {
+                            await MoveAlongPathAsync(path, _lostTargetLocation.Value, current);
+                        }
+                        else
+                        {
+                            _lostTargetLocation = null;
+                        }
+                    }
                 }
 
-                var path = await FindPathAsync(map, current, _searchDestination.Value);
-                if (path.Count == 0)
+                if (!_lostTargetLocation.HasValue)
                 {
-                    _searchDestination = GetRandomPoint(map, Random);
-                    await Task.Delay(WalkDelay);
-                    continue;
+                    if (_searchDestination == null ||
+                        Functions.MaxDistance(current, _searchDestination.Value) <= 1 ||
+                        !map.IsWalkable(_searchDestination.Value.X, _searchDestination.Value.Y))
+                    {
+                        _searchDestination = GetRandomPoint(map, Random);
+                        Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
+                    }
+
+                    var path = await FindPathAsync(map, current, _searchDestination.Value);
+                    if (path.Count == 0)
+                    {
+                        _searchDestination = GetRandomPoint(map, Random);
+                        await Task.Delay(WalkDelay);
+                        continue;
+                    }
+                    await MoveAlongPathAsync(path, _searchDestination.Value, current);
                 }
-                await MoveAlongPathAsync(path, _searchDestination.Value, current);
             }
 
             await Task.Delay(WalkDelay);

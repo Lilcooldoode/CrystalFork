@@ -143,6 +143,8 @@ public sealed partial class GameClient
                 _trackedObjects.Clear();
                 _ = LoadMapAsync();
                 StartMapExpTracking(_currentMapFile);
+                if (_awaitingHarvest)
+                    _harvestComplete = true;
                 break;
             case S.UserInformation info:
                 _objectId = info.ObjectID;
@@ -301,6 +303,10 @@ public sealed partial class GameClient
                 break;
             case S.ObjectRemove ore:
                 RemoveTrackedObject(ore.ObjectID);
+                if (_harvestTargetId.HasValue && ore.ObjectID == _harvestTargetId.Value)
+                    _harvestComplete = true;
+                if (_lastAttackTarget.HasValue && ore.ObjectID == _lastAttackTarget.Value)
+                    _lastAttackTarget = null;
                 break;
             case S.Revived:
                 if (_dead)
