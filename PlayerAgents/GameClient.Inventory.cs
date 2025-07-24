@@ -101,7 +101,7 @@ public sealed partial class GameClient
         return entry != null;
     }
 
-    public async Task SellItemsToNpcAsync(uint npcId, IReadOnlyList<UserItem> items)
+    public async Task SellItemsToNpcAsync(uint npcId, IReadOnlyList<(UserItem item, ushort count)> items)
     {
         var entry = await ResolveNpcEntryAsync(npcId);
         if (entry == null) return;
@@ -123,11 +123,10 @@ public sealed partial class GameClient
             {
             }
         }
-        foreach (var item in items)
+        foreach (var (item, count) in items)
         {
             if (item.Info == null) continue;
             _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
-            var count = item.Count;
             using var cts = new System.Threading.CancellationTokenSource(2000);
             var waitTask = WaitForSellItemAsync(item.UniqueID, cts.Token);
             await SellItemAsync(item.UniqueID, count);

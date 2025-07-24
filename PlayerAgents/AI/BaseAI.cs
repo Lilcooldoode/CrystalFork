@@ -341,30 +341,75 @@ public class BaseAI
         return true;
     }
 
-    private HashSet<UserItem> GetItemsToKeep(IEnumerable<UserItem> inventory)
+    private Dictionary<UserItem, ushort> GetItemKeepCounts(IEnumerable<UserItem> inventory)
     {
-        var keep = new HashSet<UserItem>();
+        var keep = new Dictionary<UserItem, ushort>();
         int maxWeight = Client.GetMaxBagWeight();
 
+        // Keep any potential equipment upgrades
+        var equipment = Client.Equipment;
+        if (equipment != null)
+        {
+            // Create mutable list so each item can only fill a single slot
+            var available = inventory.ToList();
+
+            for (int slot = 0; slot < equipment.Count; slot++)
+            {
+                var equipSlot = (EquipmentSlot)slot;
+                if (equipSlot == EquipmentSlot.Torch) continue;
+
+                UserItem? current = equipment[slot];
+                UserItem? bestItem = GetBestItemForSlot(equipSlot, available, current);
+
+                if (bestItem != null && bestItem != current)
+                {
+                    keep[bestItem] = bestItem.Count;
+                    int idx = available.IndexOf(bestItem);
+                    if (idx >= 0) available[idx] = null; // don't reuse same item
+                }
+            }
+        }
+
+        // Keep desired items up to the configured quota
         foreach (var desired in DesiredItems)
         {
             var matching = inventory.Where(i => MatchesDesiredItem(i, desired)).ToList();
 
             if (desired.Count.HasValue)
             {
-                foreach (var item in matching.OrderByDescending(i => i.Weight).Take(desired.Count.Value))
-                    keep.Add(item);
+                int remaining = desired.Count.Value;
+                foreach (var item in matching.OrderByDescending(i => i.Weight))
+                {
+                    if (remaining <= 0) break;
+                    ushort already = keep.TryGetValue(item, out var val) ? val : (ushort)0;
+                    int available = item.Count - already;
+                    if (available <= 0) continue;
+                    ushort amount = (ushort)Math.Min(available, remaining);
+                    keep[item] = (ushort)(already + amount);
+                    remaining -= amount;
+                }
             }
 
             if (desired.WeightFraction > 0)
             {
                 int requiredWeight = (int)Math.Ceiling(maxWeight * desired.WeightFraction);
-                int current = matching.Where(i => keep.Contains(i)).Sum(i => i.Weight);
-                foreach (var item in matching.Where(i => !keep.Contains(i)).OrderByDescending(i => i.Weight))
+                int current = matching.Sum(i =>
+                {
+                    ushort kept = keep.TryGetValue(i, out var val) ? val : (ushort)0;
+                    return i.Info!.Weight * kept;
+                });
+                foreach (var item in matching.OrderByDescending(i => i.Weight))
                 {
                     if (current >= requiredWeight) break;
-                    keep.Add(item);
-                    current += item.Weight;
+                    ushort already = keep.TryGetValue(item, out var val) ? val : (ushort)0;
+                    if (item.Info == null) continue;
+                    int available = item.Count - already;
+                    if (available <= 0) continue;
+                    int weightPer = item.Info.Weight;
+                    int needed = (requiredWeight - current + weightPer - 1) / weightPer;
+                    int add = Math.Min(available, needed);
+                    keep[item] = (ushort)(already + add);
+                    current += add * weightPer;
                 }
             }
         }
@@ -383,21 +428,27 @@ public class BaseAI
         if (!full && !heavy) return;
 
         var items = inventory.Where(i => i != null && i.Info != null).ToList();
-        var keepSet = GetItemsToKeep(items);
-        var groups = items.Where(i => !keepSet.Contains(i))
-            .GroupBy(i => i!.Info!.Type)
+        var keepCounts = GetItemKeepCounts(items);
+        var sellGroups = items
+            .Select(i => {
+                ushort keep = keepCounts.TryGetValue(i, out var k) ? k : (ushort)0;
+                ushort sell = (ushort)Math.Max(i.Count - keep, 0);
+                return (item: i, sell);
+            })
+            .Where(t => t.sell > 0)
+            .GroupBy(t => t.item!.Info!.Type)
             .ToDictionary(g => g.Key, g => g.ToList());
 
         _sellingItems = true;
         Client.UpdateAction("selling items");
         Client.IgnoreNpcInteractions = true;
-        while (groups.Count > 0)
+        while (sellGroups.Count > 0)
         {
-            var types = groups.Keys.ToList();
+            var types = sellGroups.Keys.ToList();
             if (!Client.TryFindNearestNpc(types, out var npcId, out var loc, out var entry, out var matchedTypes))
                 break;
 
-            int count = matchedTypes.Sum(t => groups[t].Count);
+            int count = matchedTypes.Sum(t => sellGroups[t].Sum(x => x.sell));
             Console.WriteLine($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {count} items");
 
             var map = Client.CurrentMap;
@@ -428,11 +479,11 @@ public class BaseAI
 
                 if (npcId != 0)
                 {
-                    var sellItems = matchedTypes.SelectMany(t => groups[t]).Where(i => i != null).ToList();
+                    var sellItems = matchedTypes.SelectMany(t => sellGroups[t]).Where(x => x.item != null).ToList();
                     await Client.SellItemsToNpcAsync(npcId, sellItems);
                     Console.WriteLine($"Finished selling to {entry?.Name ?? npcId.ToString()}");
                     foreach (var t in matchedTypes)
-                        groups.Remove(t);
+                        sellGroups.Remove(t);
                 }
                 else
                 {
