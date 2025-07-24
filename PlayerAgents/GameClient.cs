@@ -197,6 +197,20 @@ public sealed partial class GameClient
         return DefaultItemScore(item, slot);
     }
 
+    private int GetBestItemScore(UserItem item)
+    {
+        if (item.Info == null) return 0;
+        int best = 0;
+        foreach (EquipmentSlot slot in Enum.GetValues(typeof(EquipmentSlot)))
+        {
+            if (!IsItemForSlot(item.Info, slot)) continue;
+            if (!CanEquipItem(item, slot)) continue;
+            int score = GetItemScore(item, slot);
+            if (score > best) best = score;
+        }
+        return best;
+    }
+
     private static bool MatchesDesiredItem(UserItem item, DesiredItem desired)
     {
         if (item.Info == null) return false;
@@ -283,11 +297,15 @@ public sealed partial class GameClient
         foreach (var g in goods)
             Bind(g);
 
+        var orderedGoods = goods
+            .OrderByDescending(g => GetBestItemScore(g))
+            .ToList();
+
         int currentWeight = GetCurrentBagWeight();
         int maxWeight = GetMaxBagWeight();
         int freeSlots = _inventory?.Count(i => i == null) ?? int.MaxValue;
 
-        foreach (var item in goods)
+        foreach (var item in orderedGoods)
         {
             if (item.Info == null) continue;
 
