@@ -172,7 +172,8 @@ public class BaseAI
             if (pot != null)
             {
                 int heal = Client.GetPotionRestoreAmount(pot, true);
-                if (heal > 0 && maxHP - Client.HP >= heal)
+                double hpPercent = (double)Client.HP / maxHP;
+                if (heal > 0 && (maxHP - Client.HP >= heal || hpPercent <= 0.10))
                 {
                     await Client.UseItemAsync(pot);
                     string name = pot.Info?.FriendlyName ?? "HP potion";
@@ -189,7 +190,8 @@ public class BaseAI
             if (pot != null)
             {
                 int heal = Client.GetPotionRestoreAmount(pot, false);
-                if (heal > 0 && maxMP - Client.MP >= heal)
+                double mpPercent = (double)Client.MP / maxMP;
+                if (heal > 0 && (maxMP - Client.MP >= heal || mpPercent <= 0.10))
                 {
                     await Client.UseItemAsync(pot);
                     string name = pot.Info?.FriendlyName ?? "MP potion";
