@@ -466,6 +466,21 @@ public sealed partial class GameClient
         return _expRateMemory.GetBestMapFile(_playerClass.Value, _level);
     }
 
+    public string? GetRandomExplorationMap()
+    {
+        if (_playerClass == null) return null;
+
+        var entries = _expRateMemory.GetAll();
+        var allMaps = entries.Select(e => e.MapFile).Distinct().ToList();
+        var known = new HashSet<string>(entries
+            .Where(e => e.Class == _playerClass.Value && e.Level == _level)
+            .Select(e => e.MapFile));
+
+        var candidates = allMaps.Where(m => !known.Contains(m)).ToList();
+        if (candidates.Count == 0) return null;
+        return candidates[_random.Next(candidates.Count)];
+    }
+
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));
 
     private void MarkStatsDirty() => _statsDirty = true;
