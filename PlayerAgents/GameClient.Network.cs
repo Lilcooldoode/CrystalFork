@@ -41,7 +41,7 @@ public sealed partial class GameClient
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Receive error: {ex.Message}");
+            Log($"Receive error: {ex.Message}");
         }
     }
 
@@ -52,50 +52,50 @@ public sealed partial class GameClient
             case S.Login l:
                 if (l.Result == 3)
                 {
-                    Console.WriteLine("Account not found, creating...");
+                    Log("Account not found, creating...");
                     _ = CreateAccountAsync();
                 }
                 else if (l.Result != 4)
                 {
-                    Console.WriteLine($"Login failed: {l.Result}");
+                    Log($"Login failed: {l.Result}");
                 }
                 else
                 {
-                    Console.WriteLine("Wrong password");
+                    Log("Wrong password");
                 }
                 break;
             case S.NewAccount na:
                 if (na.Result == 8)
                 {
-                    Console.WriteLine("Account created");
+                    Log("Account created");
                     _ = LoginAsync();
                 }
                 else
                 {
-                    Console.WriteLine($"Account creation failed: {na.Result}");
+                    Log($"Account creation failed: {na.Result}");
                 }
                 break;
             case S.LoginSuccess ls:
                 var match = ls.Characters.FirstOrDefault(c => c.Name.Equals(_config.CharacterName, StringComparison.OrdinalIgnoreCase));
                 if (match == null)
                 {
-                    Console.WriteLine($"Character '{_config.CharacterName}' not found, creating...");
+                    Log($"Character '{_config.CharacterName}' not found, creating...");
                     _ = CreateCharacterAsync();
                 }
                 else
                 {
-                    Console.WriteLine($"Selected character '{match.Name}' (Index {match.Index})");
+                    Log($"Selected character '{match.Name}' (Index {match.Index})");
                     var start = new C.StartGame { CharacterIndex = match.Index };
                     FireAndForget(Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(start); }));
                 }
                 break;
             case S.NewCharacterSuccess ncs:
-                Console.WriteLine("Character created");
+                Log("Character created");
                 var startNew = new C.StartGame { CharacterIndex = ncs.CharInfo.Index };
                 FireAndForget(Task.Run(async () => { await RandomStartupDelayAsync(); await SendAsync(startNew); }));
                 break;
             case S.NewCharacter nc:
-                Console.WriteLine($"Character creation failed: {nc.Result}");
+                Log($"Character creation failed: {nc.Result}");
                 break;
             case S.StartGame sg:
                 var reason = sg.Result switch
@@ -107,13 +107,13 @@ public sealed partial class GameClient
                     4 => "Success",
                     _ => "Unknown"
                 };
-                Console.WriteLine($"StartGame Result: {sg.Result} ({reason})");
+                Log($"StartGame Result: {sg.Result} ({reason})");
                 break;
             case S.StartGameBanned ban:
-                Console.WriteLine($"StartGame Banned: {ban.Reason} until {ban.ExpiryDate}");
+                Log($"StartGame Banned: {ban.Reason} until {ban.ExpiryDate}");
                 break;
             case S.StartGameDelay delay:
-                Console.WriteLine($"StartGame delayed for {delay.Milliseconds} ms");
+                Log($"StartGame delayed for {delay.Milliseconds} ms");
                 break;
             case S.ObjectTeleportOut oto:
                 if (oto.ObjectID == _objectId)
@@ -176,8 +176,8 @@ public sealed partial class GameClient
                 BindAll(_inventory);
                 BindAll(_equipment);
                 MarkStatsDirty();
-                Console.WriteLine($"Logged in as {_playerName}");
-                Console.WriteLine($"I am currently at location {_currentLocation.X}, {_currentLocation.Y}");
+                Log($"Logged in as {_playerName}");
+                Log($"I am currently at location {_currentLocation.X}, {_currentLocation.Y}");
                 _classTcs.TrySetResult(info.Class);
                 ReportStatus();
                 break;
@@ -276,7 +276,7 @@ public sealed partial class GameClient
                 if (di.ObjectID == _objectId && di.Type != DamageType.Miss && _lastStruckAttacker.HasValue)
                 {
                     string name = _trackedObjects.TryGetValue(_lastStruckAttacker.Value, out var atk) ? atk.Name : "Unknown";
-                    Console.WriteLine($"{name} has attacked me for {-di.Damage} damage");
+                    Log($"{name} has attacked me for {-di.Damage} damage");
                     _lastStruckAttacker = null;
                 }
                 else if (_lastAttackTarget.HasValue && di.ObjectID == _lastAttackTarget.Value)
@@ -284,20 +284,20 @@ public sealed partial class GameClient
                     if (di.Type == DamageType.Miss)
                     {
                         if (_trackedObjects.TryGetValue(di.ObjectID, out var targ))
-                            Console.WriteLine($"I attacked {targ.Name} and missed");
+                            Log($"I attacked {targ.Name} and missed");
                         else
-                            Console.WriteLine("I attacked an unknown target and missed");
+                            Log("I attacked an unknown target and missed");
                     }
                     else
                     {
                         string name = _trackedObjects.TryGetValue(di.ObjectID, out var targ) ? targ.Name : "Unknown";
-                        Console.WriteLine($"I have damaged {name} for {-di.Damage} damage");
+                        Log($"I have damaged {name} for {-di.Damage} damage");
                     }
                     _lastAttackTarget = null;
                 }
                 break;
             case S.Death death:
-                Console.WriteLine("I have died.");
+                Log("I have died.");
                 _dead = true;
                 _currentLocation = death.Location;
                 break;
@@ -329,7 +329,7 @@ public sealed partial class GameClient
             case S.Revived:
                 if (_dead)
                 {
-                    Console.WriteLine("I have been revived.");
+                Log("I have been revived.");
                 }
                 _dead = false;
                 _hp = GetMaxHP();
@@ -340,7 +340,7 @@ public sealed partial class GameClient
                 {
                     if (_dead)
                     {
-                        Console.WriteLine("I have been revived.");
+                        Log("I have been revived.");
                     }
                     _dead = false;
                     _hp = GetMaxHP();
@@ -365,17 +365,17 @@ public sealed partial class GameClient
                 }
                 _lastPickedItem = invItem ?? gi.Item;
                 if (gi.Item.Info != null)
-                    Console.WriteLine($"Gained item: {gi.Item.Info.FriendlyName}");
+                    Log($"Gained item: {gi.Item.Info.FriendlyName}");
                 // Let the AI handle overweight checks so it can track dropped items
                 break;
             case S.GainedGold gg:
                 _gold += gg.Gold;
-                Console.WriteLine($"Gained {gg.Gold} gold");
+                Log($"Gained {gg.Gold} gold");
                 break;
             case S.GainExperience ge:
                 _experience += ge.Amount;
                 _mapExpGained += ge.Amount;
-                Console.WriteLine($"I gained {ge.Amount} experience");
+                Log($"I gained {ge.Amount} experience");
                 break;
             case S.LevelChanged lc:
                 _level = lc.Level;
@@ -385,14 +385,18 @@ public sealed partial class GameClient
                 break;
             case S.Chat chat:
                 HandleTradeFailChat(chat.Message);
+                if (chat.Type == ChatType.WhisperIn)
+                    HandleDebugCommand(chat.Message);
                 break;
             case S.ObjectChat oc:
                 HandleTradeFailChat(oc.Text);
+                if (oc.Type == ChatType.WhisperIn)
+                    HandleDebugCommand(oc.Text);
                 break;
             case S.LoseGold lg:
                 if (lg.Gold > _gold) _gold = 0;
                 else _gold -= lg.Gold;
-                Console.WriteLine($"Lost {lg.Gold} gold");
+                Log($"Lost {lg.Gold} gold");
                 break;
             case S.HealthChanged hc:
                 _hp = hc.HP;
@@ -619,7 +623,7 @@ public sealed partial class GameClient
                         }
                         if (_lastPickedItem != null && _lastPickedItem.UniqueID == sell.UniqueID)
                             _lastPickedItem = null;
-                        Console.WriteLine($"Sold {itemName} x{sell.Count} to {infoSell.entry.Name}");
+                        Log($"Sold {itemName} x{sell.Count} to {infoSell.entry.Name}");
                     }
                     else
                     {
@@ -707,7 +711,7 @@ public sealed partial class GameClient
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"KeepAlive error: {ex.Message}");
+                Log($"KeepAlive error: {ex.Message}");
             }
         }
     }

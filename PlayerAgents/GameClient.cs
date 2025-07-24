@@ -348,7 +348,7 @@ public sealed partial class GameClient
                     continue;
 
                 if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npc))
-                    Console.WriteLine($"I am buying {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold");
+                    Log($"I am buying {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold");
                 await BuyItemAsync(item.UniqueID, 1, type);
                 await Task.Delay(50);
                 if (_lastPickedItem != null && _lastPickedItem.Info != null &&
@@ -636,7 +636,7 @@ public sealed partial class GameClient
             if (seen.Contains(item.Info.Type)) continue;
             seen.Add(item.Info.Type);
             _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
-            Console.WriteLine($"I am selling {item.Info.FriendlyName} to {entry.Name}");
+            Log($"I am selling {item.Info.FriendlyName} to {entry.Name}");
             using var cts = new CancellationTokenSource(2000);
             var waitTask = WaitForSellItemAsync(item.UniqueID, cts.Token);
             await SendAsync(new C.SellItem { UniqueID = item.UniqueID, Count = 1 });
@@ -686,7 +686,7 @@ public sealed partial class GameClient
             if (seen.Contains(item.Info.Type)) continue;
             seen.Add(item.Info.Type);
             _pendingRepairChecks[item.UniqueID] = (entry, item.Info.Type);
-            Console.WriteLine($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
+            Log($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
             using var cts = new CancellationTokenSource(2000);
             var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
@@ -765,7 +765,7 @@ public sealed partial class GameClient
                 await Task.Delay(200);
             }
 
-            Console.WriteLine($"I am repairing {item.Info?.FriendlyName ?? "item"} at {entry.Name}");
+            Log($"I am repairing {item.Info?.FriendlyName ?? "item"} at {entry.Name}");
             using var cts = new CancellationTokenSource(2000);
             var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
@@ -923,7 +923,7 @@ public sealed partial class GameClient
         _npcInteractionStart = DateTime.UtcNow;
         _npcActionTasks.Clear();
         _processingNpcAction = false;
-        Console.WriteLine($"I am speaking with NPC {entry.Name}");
+        Log($"I am speaking with NPC {entry.Name}");
         _npcInteraction = new NPCInteraction(this, id);
         var page = await _npcInteraction.BeginAsync();
         HandleNpcDialogPage(page, entry);
@@ -937,7 +937,7 @@ public sealed partial class GameClient
         try
         {
             if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
-                Console.WriteLine($"I am looking at {entry.Name}'s goods list");
+                Log($"I am looking at {entry.Name}'s goods list");
             await _npcInteraction.SelectFromMainAsync(key);
             await waitTask;
         }
@@ -999,7 +999,7 @@ public sealed partial class GameClient
         try
         {
             if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
-                Console.WriteLine($"I am looking at {entry.Name}'s goods list");
+                Log($"I am looking at {entry.Name}'s goods list");
             await _npcInteraction.SelectFromMainAsync(key);
             await waitTask;
             if (_lastNpcGoods != null)

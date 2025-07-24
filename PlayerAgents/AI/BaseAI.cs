@@ -137,7 +137,7 @@ public class BaseAI
                 int idx = available.IndexOf(bestItem);
                 if (idx >= 0) available[idx] = null; // prevent using same item twice
                 if (bestItem.Info != null)
-                    Console.WriteLine($"I have equipped {bestItem.Info.FriendlyName}");
+                    Client.Log($"I have equipped {bestItem.Info.FriendlyName}");
             }
         }
 
@@ -153,13 +153,13 @@ public class BaseAI
                 int idx = available.IndexOf(bestTorch);
                 if (idx >= 0) available[idx] = null;
                 if (bestTorch.Info != null)
-                    Console.WriteLine($"I have equipped {bestTorch.Info.FriendlyName}");
+                    Client.Log($"I have equipped {bestTorch.Info.FriendlyName}");
             }
         }
         else if (currentTorch != null)
         {
             if (currentTorch.Info != null)
-                Console.WriteLine($"I have unequipped {currentTorch.Info.FriendlyName}");
+                Client.Log($"I have unequipped {currentTorch.Info.FriendlyName}");
             await Client.UnequipItemAsync(torchSlot);
         }
     }
@@ -182,7 +182,7 @@ public class BaseAI
                 {
                     await Client.UseItemAsync(pot);
                     string name = pot.Info?.FriendlyName ?? "HP potion";
-                    Console.WriteLine($"Used {name}");
+                    Client.Log($"Used {name}");
                     _nextPotionTime = DateTime.UtcNow + TimeSpan.FromSeconds(1);
                     return;
                 }
@@ -200,7 +200,7 @@ public class BaseAI
                 {
                     await Client.UseItemAsync(pot);
                     string name = pot.Info?.FriendlyName ?? "MP potion";
-                    Console.WriteLine($"Used {name}");
+                    Client.Log($"Used {name}");
                     _nextPotionTime = DateTime.UtcNow + TimeSpan.FromSeconds(1);
                 }
             }
@@ -439,7 +439,7 @@ public class BaseAI
         var target = Path.Combine(MapManager.MapDirectory, best + ".map");
         if (!string.Equals(Client.CurrentMapFile, target, StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine($"Travelling to best map {best}");
+            Client.Log($"Travelling to best map {best}");
             await TravelToMapAsync(target);
             _currentRoamPath = null;
             _lostTargetLocation = null;
@@ -572,7 +572,7 @@ public class BaseAI
                 break;
 
             int count = matchedTypes.Sum(t => sellGroups[t].Sum(x => x.sell));
-            Console.WriteLine($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {count} items");
+            Client.Log($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {count} items");
 
             var map = Client.CurrentMap;
             if (map == null) break;
@@ -582,7 +582,7 @@ public class BaseAI
                 var path = await FindPathAsync(map, Client.CurrentLocation, loc, npcId, 6);
                 if (path.Count == 0)
                 {
-                    Console.WriteLine($"Could not path to {entry?.Name ?? npcId.ToString()}");
+                    Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
                     foundPath = false;
                     break;
                 }
@@ -604,13 +604,13 @@ public class BaseAI
                 {
                     var sellItems = matchedTypes.SelectMany(t => sellGroups[t]).Where(x => x.item != null).ToList();
                     await Client.SellItemsToNpcAsync(npcId, sellItems);
-                    Console.WriteLine($"Finished selling to {entry?.Name ?? npcId.ToString()}");
+                    Client.Log($"Finished selling to {entry?.Name ?? npcId.ToString()}");
                     foreach (var t in matchedTypes)
                         sellGroups.Remove(t);
                 }
                 else
                 {
-                    Console.WriteLine($"Could not find NPC to sell items");
+                    Client.Log($"Could not find NPC to sell items");
                     break;
                 }
             }
@@ -651,7 +651,7 @@ public class BaseAI
                     .Select(i => i.Info!.FriendlyName)
                     .ToList();
                 if (itemNames.Count > 0)
-                    Console.WriteLine($"I am heading to {entry.Name} at {loc.X}, {loc.Y} to repair {string.Join(", ", itemNames)}");
+                    Client.Log($"I am heading to {entry.Name} at {loc.X}, {loc.Y} to repair {string.Join(", ", itemNames)}");
             }
 
             var map = Client.CurrentMap;
@@ -662,7 +662,7 @@ public class BaseAI
                 var path = await FindPathAsync(map, Client.CurrentLocation, loc, npcId, 6);
                 if (path.Count == 0)
                 {
-                    Console.WriteLine($"Could not path to {entry?.Name ?? npcId.ToString()}");
+                    Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
                     foundPath = false;
                     break;
                 }
@@ -683,13 +683,13 @@ public class BaseAI
                 if (npcId != 0)
                 {
                     await Client.RepairItemsAtNpcAsync(npcId);
-                    Console.WriteLine($"Finished repairing at {entry?.Name ?? npcId.ToString()}");
+                    Client.Log($"Finished repairing at {entry?.Name ?? npcId.ToString()}");
                     foreach (var t in matched)
                         types.Remove(t);
                 }
                 else
                 {
-                    Console.WriteLine("Could not find NPC to repair items");
+                    Client.Log("Could not find NPC to repair items");
                     break;
                 }
             }
@@ -745,7 +745,7 @@ public class BaseAI
 
             if (Client.GetCurrentBagWeight() > Client.GetMaxBagWeight() && Client.LastPickedItem != null)
             {
-                Console.WriteLine("Overweight detected, dropping last picked item");
+                Client.Log("Overweight detected, dropping last picked item");
                 var drop = Client.LastPickedItem;
                 await Client.DropItemAsync(drop);
                 if (drop?.Info != null)
@@ -813,7 +813,7 @@ public class BaseAI
                 _nextPathFindTime = DateTime.MinValue;
                 if (_currentTarget?.Id != closest.Id)
                 {
-                    Console.WriteLine($"I have targeted {closest.Name} at {closest.Location.X}, {closest.Location.Y}");
+                    Client.Log($"I have targeted {closest.Name} at {closest.Location.X}, {closest.Location.Y}");
                     _currentTarget = closest;
                     if (closest.Type == ObjectType.Monster)
                         _nextTargetSwitchTime = DateTime.UtcNow + TargetSwitchInterval;
@@ -915,7 +915,7 @@ public class BaseAI
                         _searchDestination = GetRandomPoint(map, Random, current, 50);
                         _currentRoamPath = null;
                         _nextPathFindTime = DateTime.MinValue;
-                        Console.WriteLine($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
+                        Client.Log($"No targets nearby, searching at {_searchDestination.Value.X}, {_searchDestination.Value.Y}");
                     }
 
                     if (_currentRoamPath == null || _currentRoamPath.Count <= 1)
