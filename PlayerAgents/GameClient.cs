@@ -798,14 +798,6 @@ public sealed partial class GameClient
             items.Add((item, (EquipmentSlot)i));
         }
 
-        foreach (var item in _inventory)
-        {
-            if (item?.Info == null) continue;
-            if (item.CurrentDura == item.MaxDura) continue;
-            if (!entry.RepairItemTypes.Contains(item.Info.Type)) continue;
-            items.Add((item, null));
-        }
-
         foreach (var (item, slot) in items)
         {
             if (slot.HasValue)
