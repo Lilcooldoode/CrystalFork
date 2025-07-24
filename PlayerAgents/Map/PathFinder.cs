@@ -7,7 +7,7 @@ namespace PlayerAgents.Map;
 
 public static class PathFinder
 {
-    private const int StepLimit = 20000;
+    private const int StepLimit = 40000;
     public readonly record struct MapPoint(string MapFile, Point Location);
 
     public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null, int radius = 1)

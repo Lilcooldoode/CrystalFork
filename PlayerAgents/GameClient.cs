@@ -349,7 +349,7 @@ public sealed partial class GameClient
                 if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npc))
                     Console.WriteLine($"I am buying {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold");
                 await BuyItemAsync(item.UniqueID, 1, type);
-                await Task.Delay(200);
+                await Task.Delay(50);
                 if (_lastPickedItem != null && _lastPickedItem.Info != null &&
                     _lastPickedItem.Info.Index == item.Info.Index && CanBeEquipped(_lastPickedItem.Info))
                 {
@@ -790,6 +790,9 @@ public sealed partial class GameClient
             await _npcInteraction.SelectFromMainAsync(key);
             await waitTask;
         }
+        catch (OperationCanceledException)
+        {
+        }
         finally
         {
             _processingNpcAction = false;
@@ -807,6 +810,9 @@ public sealed partial class GameClient
             await _npcInteraction.SelectFromMainAsync(key);
             await waitTask;
         }
+        catch (OperationCanceledException)
+        {
+        }
         finally
         {
             _processingNpcAction = false;
@@ -823,6 +829,9 @@ public sealed partial class GameClient
         {
             await _npcInteraction.SelectFromMainAsync(key);
             await waitTask;
+        }
+        catch (OperationCanceledException)
+        {
         }
         finally
         {
@@ -844,6 +853,9 @@ public sealed partial class GameClient
             await waitTask;
             if (_lastNpcGoods != null)
                 await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
+        }
+        catch (OperationCanceledException)
+        {
         }
         finally
         {
