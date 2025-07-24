@@ -53,6 +53,7 @@ public class BaseAI
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
     private DateTime _nextBestMapCheck = DateTime.MinValue;
+    private string? _currentBestMap;
     private DateTime _travelPauseUntil = DateTime.MinValue;
     private List<MapMovementEntry>? _travelPath;
     private int _travelIndex;
@@ -444,16 +445,22 @@ public class BaseAI
 
     private async Task ProcessBestMapAsync()
     {
-        if (DateTime.UtcNow < _nextBestMapCheck || DateTime.UtcNow < _travelPauseUntil) return;
-        _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromHours(2);
+        if (Client.IgnoreNpcInteractions || DateTime.UtcNow < _travelPauseUntil)
+            return;
 
-        var best = Client.GetBestMapForLevel();
-        if (best == null) return;
+        if (DateTime.UtcNow >= _nextBestMapCheck)
+        {
+            _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromHours(2);
+            _currentBestMap = Client.GetBestMapForLevel();
+        }
 
-        var target = Path.Combine(MapManager.MapDirectory, best + ".map");
+        if (_currentBestMap == null)
+            return;
+
+        var target = Path.Combine(MapManager.MapDirectory, _currentBestMap + ".map");
         if (!string.Equals(Client.CurrentMapFile, target, StringComparison.OrdinalIgnoreCase))
         {
-            Client.Log($"Travelling to best map {best}");
+            Client.Log($"Travelling to best map {_currentBestMap}");
             if (!await TravelToMapAsync(target))
             {
                 _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromSeconds(10);
