@@ -52,6 +52,7 @@ public class BaseAI
     private DateTime _nextEquipCheck = DateTime.UtcNow;
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
+    private DateTime _nextTownTeleportTime = DateTime.MinValue;
     private DateTime _nextBestMapCheck = DateTime.MinValue;
     private string? _currentBestMap;
     private DateTime _travelPauseUntil = DateTime.MinValue;
@@ -180,16 +181,29 @@ public class BaseAI
         if (Client.HP < maxHP)
         {
             var pot = Client.FindPotion(true);
+            double hpPercent = (double)Client.HP / maxHP;
             if (pot != null)
             {
                 int heal = Client.GetPotionRestoreAmount(pot, true);
-                double hpPercent = (double)Client.HP / maxHP;
                 if (heal > 0 && (maxHP - Client.HP >= heal || hpPercent <= 0.10))
                 {
                     await Client.UseItemAsync(pot);
                     string name = pot.Info?.FriendlyName ?? "HP potion";
                     Client.Log($"Used {name}");
                     _nextPotionTime = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+                    return;
+                }
+            }
+            else if (DateTime.UtcNow >= _nextTownTeleportTime && hpPercent <= 0.10)
+            {
+                var teleport = Client.FindTownTeleport();
+                if (teleport != null)
+                {
+                    await Client.UseItemAsync(teleport);
+                    string name = teleport.Info?.FriendlyName ?? "town teleport";
+                    Client.Log($"Used {name}");
+                    _nextPotionTime = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+                    _nextTownTeleportTime = DateTime.UtcNow + TimeSpan.FromMinutes(1);
                     return;
                 }
             }

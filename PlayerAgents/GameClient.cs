@@ -596,6 +596,18 @@ public sealed partial class GameClient
         return null;
     }
 
+    public UserItem? FindTownTeleport()
+    {
+        if (_inventory == null) return null;
+        foreach (var item in _inventory)
+        {
+            if (item?.Info == null) continue;
+            if (item.Info.Type != ItemType.Scroll) continue;
+            if (item.Info.Shape == 1) return item;
+        }
+        return null;
+    }
+
     public int GetPotionRestoreAmount(UserItem item, bool hpPotion)
     {
         int max = hpPotion ? GetMaxHP() : GetMaxMP();
