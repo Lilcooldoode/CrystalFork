@@ -136,7 +136,7 @@ public sealed partial class GameClient
     private TaskCompletionSource<bool>? _npcSellTcs;
     private TaskCompletionSource<bool>? _npcRepairTcs;
     private readonly Dictionary<ulong, TaskCompletionSource<S.SellItem>> _sellItemTcs = new();
-    private readonly Dictionary<ulong, TaskCompletionSource<S.RepairItem>> _repairItemTcs = new();
+    private readonly Dictionary<ulong, TaskCompletionSource<bool>> _repairItemTcs = new();
     private const int NpcResponseDebounceMs = 100;
 
     private List<UserItem>? _lastNpcGoods;
@@ -660,15 +660,63 @@ public sealed partial class GameClient
             var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
             {
-
                 await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
-                await waitTask;
+                var success = await waitTask;
+                if (success)
+                {
+                    entry.RepairItemTypes ??= new List<ItemType>();
+                    if (!entry.RepairItemTypes.Contains(item.Info.Type))
+                    {
+                        entry.RepairItemTypes.Add(item.Info.Type);
+                        _npcMemory.SaveChanges();
+                    }
+                }
+                else
+                {
+                    entry.CannotRepairItemTypes ??= new List<ItemType>();
+                    if (!entry.CannotRepairItemTypes.Contains(item.Info.Type))
+                    {
+                        entry.CannotRepairItemTypes.Add(item.Info.Type);
+                        _npcMemory.SaveChanges();
+                    }
+                }
             }
             catch (OperationCanceledException)
             {
             }
             await Task.Delay(200);
         }
+    }
+
+    private bool HasUnknownSellTypes(NpcEntry entry)
+    {
+        if (_inventory == null) return false;
+        var seen = new HashSet<ItemType>();
+        if (entry.SellItemTypes != null) seen.UnionWith(entry.SellItemTypes);
+        if (entry.CannotSellItemTypes != null) seen.UnionWith(entry.CannotSellItemTypes);
+        foreach (var item in _inventory)
+        {
+            if (item?.Info == null) continue;
+            if (!seen.Contains(item.Info.Type))
+                return true;
+        }
+        return false;
+    }
+
+    private bool HasUnknownRepairTypes(NpcEntry entry)
+    {
+        if (_inventory == null) return false;
+        var seen = new HashSet<ItemType>();
+        if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
+        if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
+        foreach (var item in _inventory)
+        {
+            if (item?.Info == null) continue;
+            if (item.CurrentDura == item.MaxDura) continue;
+            if (!seen.Contains(item.Info.Type))
+                return true;
+        }
+        return false;
     }
 
     private async Task HandleNpcSellAsync(NpcEntry entry)
@@ -871,6 +919,8 @@ public sealed partial class GameClient
 
         bool changed = false;
         bool needBuyCheck = false;
+        bool needSellCheck = false;
+        bool needRepairCheck = false;
 
         bool hasBuy = keys.Overlaps(new[] { "@BUY", "@BUYSELL", "@BUYNEW", "@BUYSELLNEW", "@PEARLBUY" });
         bool hasSell = keys.Overlaps(new[] { "@SELL", "@BUYSELL", "@BUYSELLNEW" });
@@ -907,7 +957,8 @@ public sealed partial class GameClient
                 entry.CanSell = true;
                 changed = true;
             }
-            if (entry.SellItemTypes == null && entry.CannotSellItemTypes == null)
+            needSellCheck = HasUnknownSellTypes(entry);
+            if (needSellCheck)
             {
                 string[] sellKeys = { "@BUYSELLNEW", "@BUYSELL", "@SELL" };
                 sellKey = keyList.FirstOrDefault(k => sellKeys.Contains(k.ToUpper())) ?? "@SELL";
@@ -926,7 +977,8 @@ public sealed partial class GameClient
                 entry.CanRepair = true;
                 changed = true;
             }
-            if (entry.RepairItemTypes == null && entry.CannotRepairItemTypes == null)
+            needRepairCheck = HasUnknownRepairTypes(entry);
+            if (needRepairCheck)
             {
                 string[] repairKeys = { "@SREPAIR", "@REPAIR" };
                 repairKey = keyList.FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";

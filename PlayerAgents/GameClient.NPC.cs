@@ -108,9 +108,9 @@ public sealed partial class GameClient
         return tcs.Task;
     }
 
-    public Task<S.RepairItem> WaitForRepairItemAsync(ulong uniqueId, CancellationToken cancellationToken = default)
+    public Task<bool> WaitForRepairItemAsync(ulong uniqueId, CancellationToken cancellationToken = default)
     {
-        var tcs = new TaskCompletionSource<S.RepairItem>();
+        var tcs = new TaskCompletionSource<bool>();
         _repairItemTcs[uniqueId] = tcs;
         if (cancellationToken != default)
             cancellationToken.Register(() =>

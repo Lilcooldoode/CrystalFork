@@ -515,7 +515,7 @@ public sealed partial class GameClient
             case S.NPCSell:
                 if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcSellEntry) && npcSellEntry.CanSell)
                 {
-                    if (npcSellEntry.SellItemTypes == null && npcSellEntry.CannotSellItemTypes == null)
+                    if (HasUnknownSellTypes(npcSellEntry))
                     {
                         FireAndForget(Task.Run(async () => { await HandleNpcSellAsync(npcSellEntry); _npcSellTcs?.TrySetResult(true); _npcSellTcs = null; }));
                     }
@@ -542,7 +542,7 @@ public sealed partial class GameClient
                         npcRepairEntry.CanRepair = true;
                         _npcMemory.SaveChanges();
                     }
-                    if (npcRepairEntry.RepairItemTypes == null && npcRepairEntry.CannotRepairItemTypes == null)
+                    if (HasUnknownRepairTypes(npcRepairEntry))
                     {
                         FireAndForget(Task.Run(async () => { await HandleNpcRepairAsync(npcRepairEntry); _npcRepairTcs?.TrySetResult(true); _npcRepairTcs = null; }));
                     }
@@ -622,21 +622,17 @@ public sealed partial class GameClient
                 }
                 break;
             case S.RepairItem repair:
-                if (_repairItemTcs.TryGetValue(repair.UniqueID, out var repairTcs))
-                {
-                    repairTcs.TrySetResult(repair);
-                    _repairItemTcs.Remove(repair.UniqueID);
-                }
+                // Server acknowledges the repair request but success will be
+                // indicated by ItemRepaired or a chat message.
                 break;
             case S.ItemRepaired ir:
-                if (_pendingRepairChecks.TryGetValue(ir.UniqueID, out var infoRep))
+                if (_repairItemTcs.TryGetValue(ir.UniqueID, out var repTcs))
                 {
-                    infoRep.entry.RepairItemTypes ??= new List<ItemType>();
-                    if (!infoRep.entry.RepairItemTypes.Contains(infoRep.type))
-                    {
-                        infoRep.entry.RepairItemTypes.Add(infoRep.type);
-                        _npcMemory.SaveChanges();
-                    }
+                    repTcs.TrySetResult(true);
+                    _repairItemTcs.Remove(ir.UniqueID);
+                }
+                if (_pendingRepairChecks.ContainsKey(ir.UniqueID))
+                {
                     _pendingRepairChecks.Remove(ir.UniqueID);
                 }
                 break;
@@ -694,13 +690,10 @@ public sealed partial class GameClient
         if (_pendingRepairChecks.Count > 0 && text.Contains("cannot repair", StringComparison.OrdinalIgnoreCase))
         {
             var kv = _pendingRepairChecks.First();
-            var entry = kv.Value.entry;
-            var type = kv.Value.type;
-            entry.CannotRepairItemTypes ??= new List<ItemType>();
-            if (!entry.CannotRepairItemTypes.Contains(type))
+            if (_repairItemTcs.TryGetValue(kv.Key, out var repTcs))
             {
-                entry.CannotRepairItemTypes.Add(type);
-                _npcMemory.SaveChanges();
+                repTcs.TrySetResult(false);
+                _repairItemTcs.Remove(kv.Key);
             }
             _pendingRepairChecks.Remove(kv.Key);
         }

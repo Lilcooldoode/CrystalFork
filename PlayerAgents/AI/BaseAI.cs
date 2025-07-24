@@ -445,7 +445,7 @@ public class BaseAI
         while (sellGroups.Count > 0)
         {
             var types = sellGroups.Keys.ToList();
-            if (!Client.TryFindNearestNpc(types, out var npcId, out var loc, out var entry, out var matchedTypes))
+            if (!Client.TryFindNearestNpc(types, out var npcId, out var loc, out var entry, out var matchedTypes, includeUnknowns: false))
                 break;
 
             int count = matchedTypes.Sum(t => sellGroups[t].Sum(x => x.sell));
@@ -472,7 +472,7 @@ public class BaseAI
             if (Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
             {
                 if (npcId == 0)
-                    Client.TryFindNearestNpc(types, out npcId, out _, out entry, out matchedTypes);
+                    Client.TryFindNearestNpc(types, out npcId, out _, out entry, out matchedTypes, includeUnknowns: false);
 
                 if (npcId == 0 || entry != null)
                     npcId = await Client.ResolveNpcIdAsync(entry);

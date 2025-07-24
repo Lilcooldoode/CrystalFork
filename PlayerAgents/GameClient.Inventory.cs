@@ -9,7 +9,7 @@ using Shared;
 
 public sealed partial class GameClient
 {
-    public bool TryFindNearestNpc(ItemType type, out uint id, out Point location, out NpcEntry? entry)
+    public bool TryFindNearestNpc(ItemType type, out uint id, out Point location, out NpcEntry? entry, bool includeUnknowns = true)
     {
         id = 0;
         location = default;
@@ -24,8 +24,10 @@ public sealed partial class GameClient
         {
             if (e.MapFile != map) continue;
             bool knows = e.SellItemTypes != null && e.SellItemTypes.Contains(type);
-            bool unknown = e.SellItemTypes == null && e.CannotSellItemTypes == null && e.CanSell;
-            if (!knows && !unknown) continue;
+            bool unknown = e.CanSell &&
+                (e.SellItemTypes == null || !e.SellItemTypes.Contains(type)) &&
+                (e.CannotSellItemTypes == null || !e.CannotSellItemTypes.Contains(type));
+            if (!knows && (!includeUnknowns || !unknown)) continue;
 
             int dist = Functions.MaxDistance(_currentLocation, new Point(e.X, e.Y));
             if (dist < bestDist)
@@ -51,7 +53,7 @@ public sealed partial class GameClient
         return entry != null;
     }
 
-    public bool TryFindNearestNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes)
+    public bool TryFindNearestNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes, bool includeUnknowns = true)
     {
         id = 0;
         location = default;
@@ -70,8 +72,10 @@ public sealed partial class GameClient
             foreach (var t in types)
             {
                 bool knows = e.SellItemTypes != null && e.SellItemTypes.Contains(t);
-                bool unknown = e.SellItemTypes == null && e.CannotSellItemTypes == null && e.CanSell;
-                if (knows || unknown)
+                bool unknown = e.CanSell &&
+                    (e.SellItemTypes == null || !e.SellItemTypes.Contains(t)) &&
+                    (e.CannotSellItemTypes == null || !e.CannotSellItemTypes.Contains(t));
+                if (knows || (includeUnknowns && unknown))
                     sells.Add(t);
             }
             if (sells.Count == 0) continue;
