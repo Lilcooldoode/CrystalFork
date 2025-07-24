@@ -231,6 +231,48 @@ public sealed partial class GameClient
         return false;
     }
 
+    private static bool CanBeEquipped(ItemInfo info)
+    {
+        foreach (EquipmentSlot slot in Enum.GetValues(typeof(EquipmentSlot)))
+        {
+            if (IsItemForSlot(info, slot))
+                return true;
+        }
+        return false;
+    }
+
+    private async Task EquipIfBetterAsync(UserItem item)
+    {
+        if (_equipment == null || item.Info == null) return;
+
+        int bestSlot = -1;
+        int bestDiff = 0;
+
+        for (int slot = 0; slot < _equipment.Length; slot++)
+        {
+            var equipSlot = (EquipmentSlot)slot;
+            if (!IsItemForSlot(item.Info, equipSlot)) continue;
+            if (!CanEquipItem(item, equipSlot)) continue;
+
+            var current = _equipment[slot];
+            int newScore = GetItemScore(item, equipSlot);
+            int currentScore = current != null ? GetItemScore(current, equipSlot) : -1;
+            int diff = newScore - currentScore;
+            if (diff > bestDiff)
+            {
+                bestDiff = diff;
+                bestSlot = slot;
+            }
+        }
+
+        if (bestSlot >= 0 && bestDiff > 0)
+        {
+            await EquipItemAsync(item, (EquipmentSlot)bestSlot);
+            await Task.Delay(200);
+            _lastPickedItem = null;
+        }
+    }
+
     private async Task BuyNeededItemsFromGoodsAsync(List<UserItem> goods, PanelType type)
     {
         if (goods.Count == 0) return;
@@ -283,6 +325,11 @@ public sealed partial class GameClient
                     Console.WriteLine($"I am buying {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold");
                 await BuyItemAsync(item.UniqueID, 1, type);
                 await Task.Delay(200);
+                if (_lastPickedItem != null && _lastPickedItem.Info != null &&
+                    _lastPickedItem.Info.Index == item.Info.Index && CanBeEquipped(_lastPickedItem.Info))
+                {
+                    await EquipIfBetterAsync(_lastPickedItem);
+                }
             }
         }
     }

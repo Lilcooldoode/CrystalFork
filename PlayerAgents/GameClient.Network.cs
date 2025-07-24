@@ -380,6 +380,7 @@ public sealed partial class GameClient
             case S.LoseGold lg:
                 if (lg.Gold > _gold) _gold = 0;
                 else _gold -= lg.Gold;
+                Console.WriteLine($"Lost {lg.Gold} gold");
                 break;
             case S.HealthChanged hc:
                 _hp = hc.HP;
