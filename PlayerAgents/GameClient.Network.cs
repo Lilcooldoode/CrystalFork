@@ -513,13 +513,8 @@ public sealed partial class GameClient
                 ProcessNpcGoods(pearlGoods.List, pearlGoods.Type);
                 break;
             case S.NPCSell:
-                if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcSellEntry))
+                if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcSellEntry) && npcSellEntry.CanSell)
                 {
-                    if (!npcSellEntry.CanSell)
-                    {
-                        npcSellEntry.CanSell = true;
-                        _npcMemory.SaveChanges();
-                    }
                     if (npcSellEntry.SellItemTypes == null && npcSellEntry.CannotSellItemTypes == null)
                     {
                         FireAndForget(Task.Run(async () => { await HandleNpcSellAsync(npcSellEntry); _npcSellTcs?.TrySetResult(true); _npcSellTcs = null; }));
@@ -530,6 +525,12 @@ public sealed partial class GameClient
                         _npcSellTcs?.TrySetResult(true);
                         _npcSellTcs = null;
                     }
+                }
+                else
+                {
+                    ProcessNpcActionQueue();
+                    _npcSellTcs?.TrySetResult(true);
+                    _npcSellTcs = null;
                 }
                 break;
             case S.NPCRepair:
