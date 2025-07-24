@@ -271,11 +271,21 @@ public class BaseAI
         return null;
     }
 
-    private HashSet<Point> BuildObstacles(uint ignoreId = 0)
+    private HashSet<Point> BuildObstacles(uint ignoreId = 0, int radius = 1)
     {
         var obstacles = new HashSet<Point>(Client.BlockingCells);
         if (ignoreId != 0 && Client.TrackedObjects.TryGetValue(ignoreId, out var obj))
             obstacles.Remove(obj.Location);
+
+        if (radius > 0 && !string.IsNullOrEmpty(Client.CurrentMapFile))
+        {
+            var current = Path.GetFileNameWithoutExtension(Client.CurrentMapFile);
+            foreach (var entry in Client.MovementMemory.GetAll())
+            {
+                if (entry.SourceMap == current)
+                    obstacles.Add(new Point(entry.SourceX, entry.SourceY));
+            }
+        }
         return obstacles;
     }
 
@@ -283,7 +293,7 @@ public class BaseAI
     {
         try
         {
-            var obstacles = BuildObstacles(ignoreId);
+            var obstacles = BuildObstacles(ignoreId, radius);
             return await PlayerAgents.Map.PathFinder.FindPathAsync(map, start, dest, obstacles, radius);
         }
         catch
