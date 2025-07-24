@@ -347,11 +347,12 @@ public sealed partial class GameClient
                 break;
             case S.GainedItem gi:
                 Bind(gi.Item);
+                UserItem? invItem = null;
                 if (_inventory != null)
                 {
-                    AddItem(gi.Item);
+                    invItem = AddItem(gi.Item);
                 }
-                _lastPickedItem = gi.Item;
+                _lastPickedItem = invItem ?? gi.Item;
                 if (gi.Item.Info != null)
                     Console.WriteLine($"Gained item: {gi.Item.Info.FriendlyName}");
                 // Let the AI handle overweight checks so it can track dropped items
@@ -565,9 +566,9 @@ public sealed partial class GameClient
                     if (sell.Success)
                     {
                         string itemName = string.Empty;
-                        var invItem = _inventory != null ? Array.Find(_inventory, x => x != null && x.UniqueID == sell.UniqueID) : null;
-                        var eqItem = invItem == null && _equipment != null ? Array.Find(_equipment, x => x != null && x.UniqueID == sell.UniqueID) : null;
-                        var it = invItem ?? eqItem;
+                        var inventoryItem = _inventory != null ? Array.Find(_inventory, x => x != null && x.UniqueID == sell.UniqueID) : null;
+                        var eqItem = inventoryItem == null && _equipment != null ? Array.Find(_equipment, x => x != null && x.UniqueID == sell.UniqueID) : null;
+                        var it = inventoryItem ?? eqItem;
                         if (it != null && it.Info != null) itemName = it.Info.FriendlyName;
                         infoSell.entry.SellItemTypes ??= new List<ItemType>();
                         if (!infoSell.entry.SellItemTypes.Contains(infoSell.type))

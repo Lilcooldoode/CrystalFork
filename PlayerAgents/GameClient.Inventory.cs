@@ -284,9 +284,9 @@ public sealed partial class GameClient
         }
     }
 
-    private void AddItem(UserItem item)
+    private UserItem? AddItem(UserItem item)
     {
-        if (_inventory == null) return;
+        if (_inventory == null) return null;
 
         if (item.Info != null && item.Info.StackSize > 1)
         {
@@ -298,7 +298,7 @@ public sealed partial class GameClient
                 if (item.Count + temp.Count <= temp.Info.StackSize)
                 {
                     temp.Count += item.Count;
-                    return;
+                    return temp;
                 }
 
                 item.Count -= (ushort)(temp.Info.StackSize - temp.Count);
@@ -311,9 +311,11 @@ public sealed partial class GameClient
             if (_inventory[i] == null)
             {
                 _inventory[i] = item;
-                break;
+                return item;
             }
         }
+
+        return null;
     }
 
     private async Task<NpcEntry?> ResolveNpcEntryAsync(uint npcId, int timeoutMs = 2000)
