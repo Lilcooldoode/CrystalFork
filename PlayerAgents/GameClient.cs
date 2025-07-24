@@ -59,9 +59,9 @@ public sealed partial class GameClient
     private UserItem? _lastPickedItem;
     private uint _gold;
 
-    private int _cachedMaxBagWeight;
-    private int _cachedMaxHP;
-    private int _cachedMaxMP;
+    private int _maxBagWeight;
+    private int _maxHP;
+    private int _maxMP;
     private bool _statsDirty = true;
 
     private uint? _lastAttackTarget;
@@ -490,9 +490,9 @@ public sealed partial class GameClient
     {
         if (_playerClass == null)
         {
-            _cachedMaxBagWeight = int.MaxValue;
-            _cachedMaxHP = int.MaxValue;
-            _cachedMaxMP = int.MaxValue;
+            _maxBagWeight = int.MaxValue;
+            _maxHP = int.MaxValue;
+            _maxMP = int.MaxValue;
             _statsDirty = false;
             return;
         }
@@ -501,8 +501,13 @@ public sealed partial class GameClient
 
         int baseWeight = _baseStats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
         int extraWeight = 0;
-        int extraHP = 0;
+        int baseHP = _baseStats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
+       int extraHP = 0;
+        int hpPercent = 0;
+        int baseMP = _baseStats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
         int extraMP = 0;
+        int mpPercent = 0;
+
         if (_equipment != null)
         {
             foreach (var item in _equipment)
@@ -510,17 +515,29 @@ public sealed partial class GameClient
                 if (item == null || item.Info == null) continue;
                 extraWeight += item.Info.Stats[Stat.BagWeight];
                 extraWeight += item.AddedStats[Stat.BagWeight];
+
                 extraHP += item.Info.Stats[Stat.HP];
                 extraHP += item.AddedStats[Stat.HP];
+                hpPercent += item.Info.Stats[Stat.HPRatePercent];
+                hpPercent += item.AddedStats[Stat.HPRatePercent];
+
                 extraMP += item.Info.Stats[Stat.MP];
                 extraMP += item.AddedStats[Stat.MP];
+                mpPercent += item.Info.Stats[Stat.MPRatePercent];
+                mpPercent += item.AddedStats[Stat.MPRatePercent];
             }
         }
-        _cachedMaxBagWeight = baseWeight + extraWeight;
-        int baseHP = _baseStats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
-        int baseMP = _baseStats.Stats.First(s => s.Type == Stat.MP).Calculate(_playerClass.Value, _level);
-        _cachedMaxHP = baseHP + extraHP;
-        _cachedMaxMP = baseMP + extraMP;
+
+        _maxBagWeight = baseWeight + extraWeight;
+
+        _maxHP = baseHP + extraHP;
+        if (hpPercent != 0)
+            _maxHP += (_maxHP * hpPercent) / 100;
+
+        _maxMP = baseMP + extraMP;
+        if (mpPercent != 0)
+            _maxMP += (_maxMP * mpPercent) / 100;
+
         _statsDirty = false;
     }
 
@@ -539,19 +556,19 @@ public sealed partial class GameClient
     public int GetMaxBagWeight()
     {
         if (_statsDirty) RecalculateStats();
-        return _cachedMaxBagWeight;
+        return _maxBagWeight;
     }
 
     public int GetMaxHP()
     {
         if (_statsDirty) RecalculateStats();
-        return _cachedMaxHP;
+        return _maxHP;
     }
 
     public int GetMaxMP()
     {
         if (_statsDirty) RecalculateStats();
-        return _cachedMaxMP;
+        return _maxMP;
     }
 
     public bool HasFreeBagSpace()

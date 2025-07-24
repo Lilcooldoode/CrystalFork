@@ -408,6 +408,8 @@ public sealed partial class GameClient
             case S.HealthChanged hc:
                 _hp = hc.HP;
                 _mp = hc.MP;
+                _dead = hc.HP <= 0;
+                ReportStatus();
                 break;
             case S.UseItem ui:
                 if (ui.Success && _inventory != null)
