@@ -121,7 +121,6 @@ public sealed partial class GameClient
     private uint? _dialogNpcId;
     private readonly Queue<uint> _npcQueue = new();
     private readonly Queue<(string key, Func<Task> action)> _npcActionTasks = new();
-    private readonly HashSet<string> _npcActionTaskKeys = new();
     private bool _processingNpcAction;
     private DateTime _npcInteractionStart;
     private bool _skipNextGoods;
@@ -538,7 +537,6 @@ public sealed partial class GameClient
         }
 
         var item = _npcActionTasks.Dequeue();
-        _npcActionTaskKeys.Remove(item.key);
         _processingNpcAction = true;
         await item.action();
     }
@@ -548,7 +546,6 @@ public sealed partial class GameClient
         _dialogNpcId = id;
         _npcInteractionStart = DateTime.UtcNow;
         _npcActionTasks.Clear();
-        _npcActionTaskKeys.Clear();
         _processingNpcAction = false;
         Console.WriteLine($"I am speaking with NPC {entry.Name}");
         _npcInteraction = new NPCInteraction(this, id);
@@ -681,17 +678,14 @@ public sealed partial class GameClient
 
         if (buyKey != null)
         {
-            _npcActionTaskKeys.Add(buyKey);
             _npcActionTasks.Enqueue((buyKey, CreateBuyTask(buyKey)));
         }
         if (sellKey != null)
         {
-            _npcActionTaskKeys.Add(sellKey);
             _npcActionTasks.Enqueue((sellKey, CreateSellTask(sellKey)));
         }
         if (repairKey != null)
         {
-            _npcActionTaskKeys.Add(repairKey);
             _npcActionTasks.Enqueue((repairKey, CreateRepairTask(repairKey)));
         }
 
