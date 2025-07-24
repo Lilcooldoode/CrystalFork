@@ -283,6 +283,10 @@ public sealed partial class GameClient
         foreach (var g in goods)
             Bind(g);
 
+        int currentWeight = GetCurrentBagWeight();
+        int maxWeight = GetMaxBagWeight();
+        int freeSlots = _inventory?.Count(i => i == null) ?? int.MaxValue;
+
         foreach (var item in goods)
         {
             if (item.Info == null) continue;
@@ -321,6 +325,9 @@ public sealed partial class GameClient
 
             if (need && _gold >= item.Info.Price)
             {
+                if (freeSlots <= 0 || currentWeight + item.Weight > maxWeight)
+                    continue;
+
                 if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npc))
                     Console.WriteLine($"I am buying {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold");
                 await BuyItemAsync(item.UniqueID, 1, type);
@@ -330,6 +337,9 @@ public sealed partial class GameClient
                 {
                     await EquipIfBetterAsync(_lastPickedItem);
                 }
+
+                freeSlots--;
+                currentWeight += item.Weight;
             }
         }
     }
