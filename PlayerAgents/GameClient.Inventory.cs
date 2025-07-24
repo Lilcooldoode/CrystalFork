@@ -138,7 +138,12 @@ public sealed partial class GameClient
         {
             foreach (var kv in _npcEntries)
             {
-                if (kv.Value == entry)
+                var e = kv.Value;
+                if (ReferenceEquals(e, entry) ||
+                    (e.Name == entry.Name &&
+                     e.MapFile == entry.MapFile &&
+                     e.X == entry.X &&
+                     e.Y == entry.Y))
                 {
                     id = kv.Key;
                     break;
@@ -338,8 +343,15 @@ public sealed partial class GameClient
         {
             foreach (var kv in _npcEntries)
             {
-                if (kv.Value == entry)
+                var e = kv.Value;
+                if (ReferenceEquals(e, entry) ||
+                    (e.Name == entry.Name &&
+                     e.MapFile == entry.MapFile &&
+                     e.X == entry.X &&
+                     e.Y == entry.Y))
+                {
                     return kv.Key;
+                }
             }
 
             await Task.Delay(50);
