@@ -148,7 +148,8 @@ public sealed partial class GameClient
 
 
     // Use a dictionary for faster lookups by item index
-    public static readonly Dictionary<int, ItemInfo> ItemInfoDict = new();
+    // Shared across all agents; using ConcurrentDictionary for thread safety
+    public static readonly ConcurrentDictionary<int, ItemInfo> ItemInfoDict = new();
 
     private static readonly HashSet<byte> AutoHarvestAIs = new() { 1, 2, 4, 5, 7, 9 };
 
