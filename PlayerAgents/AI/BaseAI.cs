@@ -463,6 +463,9 @@ public class BaseAI
             {
                 _currentBestMap = Client.GetBestMapForLevel();
             }
+
+            // force path recalculation if destination changes or interval lapses
+            _travelPath = null;
         }
 
         if (_currentBestMap == null)
@@ -471,16 +474,19 @@ public class BaseAI
         var target = Path.Combine(MapManager.MapDirectory, _currentBestMap + ".map");
         if (!string.Equals(Client.CurrentMapFile, target, StringComparison.OrdinalIgnoreCase))
         {
-            Client.Log($"Travelling to best map {_currentBestMap}");
-            if (!await TravelToMapAsync(target))
+            if (_travelPath == null)
             {
-                _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-                return;
+                Client.Log($"Travelling to best map {_currentBestMap}");
+                if (!await TravelToMapAsync(target))
+                {
+                    _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+                    return;
+                }
+                _currentRoamPath = null;
+                _lostTargetLocation = null;
+                _lostTargetPath = null;
+                _currentTarget = null;
             }
-            _currentRoamPath = null;
-            _lostTargetLocation = null;
-            _lostTargetPath = null;
-            _currentTarget = null;
         }
     }
 
