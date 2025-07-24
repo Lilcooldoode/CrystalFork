@@ -45,6 +45,7 @@ public sealed partial class GameClient
     public ushort Level => _level;
     public string CurrentMapFile => _currentMapFile;
     public string CurrentMapName => _currentMapName;
+    public NavData? NavData => _navData;
 
     private LightSetting _timeOfDay = LightSetting.Normal;
 

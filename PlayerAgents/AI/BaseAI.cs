@@ -76,8 +76,12 @@ public class BaseAI
         return score;
     }
 
-    private static Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random, Point origin, int radius)
+    private Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random, Point origin, int radius)
     {
+        var nav = Client.NavData;
+        if (nav != null && nav.TryGetRandomCell(random, origin, radius, out var navPoint))
+            return navPoint;
+
         var cells = map.WalkableCells;
         if (cells.Count > 0)
         {

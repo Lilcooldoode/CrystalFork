@@ -147,4 +147,36 @@ public sealed class NavData
         if (changed && DateTime.UtcNow - _lastWriteTime >= interval)
             Save();
     }
+
+    public bool TryGetRandomCell(Random random, Point origin, int radius, out Point cell)
+    {
+        cell = default;
+        if (_dormant)
+            return false;
+
+        lock (_lock)
+        {
+            if (_cells.Count == 0)
+            {
+                _dormant = true;
+                return false;
+            }
+
+            IEnumerable<Point> source = _cells;
+            if (radius > 0)
+            {
+                var subset = _cells.Where(c => Functions.MaxDistance(c, origin) <= radius).ToList();
+                if (subset.Count == 0)
+                {
+                    cell = default;
+                    return false;
+                }
+                source = subset;
+            }
+
+            var list = source as IList<Point> ?? source.ToList();
+            cell = list[random.Next(list.Count)];
+            return true;
+        }
+    }
 }

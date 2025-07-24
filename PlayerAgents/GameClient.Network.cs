@@ -204,6 +204,7 @@ public sealed partial class GameClient
                 break;
             case S.ObjectNPC on:
                 AddTrackedObject(new TrackedObject(on.ObjectID, ObjectType.Merchant, on.Name, on.Location, on.Direction));
+                _navData?.Remove(on.Location);
                 if (!string.IsNullOrEmpty(_currentMapFile))
                 {
                     var mapId = Path.GetFileNameWithoutExtension(_currentMapFile);
