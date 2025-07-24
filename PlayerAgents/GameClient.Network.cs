@@ -152,6 +152,7 @@ public sealed partial class GameClient
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentMapName = mc.Title;
                 _currentLocation = mc.Location;
+                _navData?.Remove(_currentLocation);
                 _trackedObjects.Clear();
                 _ = LoadMapAsync();
                 StartMapExpTracking(_currentMapFile);
@@ -165,6 +166,7 @@ public sealed partial class GameClient
                 _baseStats = new BaseStats(info.Class);
                 _playerName = info.Name;
                 _currentLocation = info.Location;
+                _navData?.Remove(_currentLocation);
                 _gender = info.Gender;
                 _level = info.Level;
                 _experience = info.Experience;
@@ -188,6 +190,7 @@ public sealed partial class GameClient
                     _canRun = false;
                 }
                 _currentLocation = loc.Location;
+                _navData?.Remove(_currentLocation);
                 ReportStatus();
                 break;
             case S.TimeOfDay tod:
@@ -233,6 +236,7 @@ public sealed partial class GameClient
                     _lastMoveTime = DateTime.UtcNow;
                     _canRun = true;
                     _pendingMoveTarget = null;
+                    _navData?.Remove(_currentLocation);
                 }
                 break;
             case S.ObjectRun oru:
@@ -242,6 +246,7 @@ public sealed partial class GameClient
                     _currentLocation = oru.Location;
                     _lastMoveTime = DateTime.UtcNow;
                     _pendingMoveTarget = null;
+                    _navData?.Remove(_currentLocation);
                 }
                 break;
             case S.Struck st:
@@ -300,6 +305,7 @@ public sealed partial class GameClient
                 Log("I have died.");
                 _dead = true;
                 _currentLocation = death.Location;
+                _navData?.Remove(_currentLocation);
                 break;
             case S.ObjectDied od:
                 if (_trackedObjects.TryGetValue(od.ObjectID, out var objD))
@@ -694,6 +700,10 @@ public sealed partial class GameClient
     {
         if (string.IsNullOrEmpty(_currentMapFile)) return;
         _mapData = await MapManager.GetMapAsync(_currentMapFile);
+        if (_mapData != null)
+        {
+            _navData = _navDataManager.GetNavData(_currentMapFile, _mapData.WalkableCells);
+        }
     }
 
     private async Task KeepAliveLoop()
@@ -703,15 +713,31 @@ public sealed partial class GameClient
             await Task.Delay(5000);
             try
             {
-                _npcMemory.CheckForUpdates();
-                _movementMemory.CheckForUpdates();
-                _expRateMemory.CheckForUpdates();
-                CheckNpcInteractionTimeout();
                 await SendAsync(new C.KeepAlive { Time = Environment.TickCount64 });
             }
             catch (Exception ex)
             {
                 Log($"KeepAlive error: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task MaintenanceLoop()
+    {
+        while (_stream != null)
+        {
+            await Task.Delay(5000);
+            try
+            {
+                _npcMemory.CheckForUpdates();
+                _movementMemory.CheckForUpdates();
+                _expRateMemory.CheckForUpdates();
+                _navData?.SaveIfNeeded(TimeSpan.FromSeconds(60));
+                CheckNpcInteractionTimeout();
+            }
+            catch (Exception ex)
+            {
+                Log($"Maintenance error: {ex.Message}");
             }
         }
     }

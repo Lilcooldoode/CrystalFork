@@ -15,6 +15,7 @@ public sealed partial class GameClient
         _canRun = false;
         FireAndForget(Task.Run(ReceiveLoop));
         FireAndForget(Task.Run(KeepAliveLoop));
+        FireAndForget(Task.Run(MaintenanceLoop));
     }
 
     public async Task LoginAsync()

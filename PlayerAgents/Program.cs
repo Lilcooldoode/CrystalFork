@@ -154,6 +154,8 @@ internal class Program
             var expRateFile = Path.Combine(AppContext.BaseDirectory, "exp_rate_memory.json");
             var expRateMemory = new MapExpRateMemoryBank(expRateFile);
 
+            var navManager = new NavDataManager();
+
             List<AgentConfig> agentConfigs;
             if (config.PlayerCount > 0)
             {
@@ -215,7 +217,7 @@ internal class Program
                 {
                     try
                     {
-                        await RunAgentAsync(agentConfig, npcMemory, movementMemory, expRateMemory, logger, semaphore);
+                        await RunAgentAsync(agentConfig, npcMemory, movementMemory, expRateMemory, navManager, logger, semaphore);
                     }
                     catch
                     {
@@ -241,10 +243,11 @@ internal class Program
         NpcMemoryBank npcMemory,
         MapMovementMemoryBank movementMemory,
         MapExpRateMemoryBank expRateMemory,
+        NavDataManager navManager,
         IAgentLogger logger,
         SemaphoreSlim? loginLimiter = null)
     {
-        var client = new GameClient(config, npcMemory, movementMemory, expRateMemory, logger);
+        var client = new GameClient(config, npcMemory, movementMemory, expRateMemory, navManager, logger);
         client.UpdateAction("connecting");
         await client.ConnectAsync();
         await client.LoginAsync();

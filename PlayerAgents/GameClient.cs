@@ -18,6 +18,7 @@ public sealed partial class GameClient
     private readonly NpcMemoryBank _npcMemory;
     private readonly MapMovementMemoryBank _movementMemory;
     private readonly MapExpRateMemoryBank _expRateMemory;
+    private readonly NavDataManager _navDataManager;
     private readonly IAgentLogger? _logger;
     private bool _suppressNextMovement;
     private TcpClient? _client;
@@ -37,6 +38,7 @@ public sealed partial class GameClient
     private string _currentMapFile = string.Empty;
     private string _currentMapName = string.Empty;
     private PlayerAgents.Map.MapData? _mapData;
+    private NavData? _navData;
 
     public string PlayerName => string.IsNullOrEmpty(_playerName) ? _config.CharacterName : _playerName;
     public string CurrentAction => _currentAction;
@@ -407,12 +409,13 @@ public sealed partial class GameClient
         ReportStatus();
     }
 
-    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory, IAgentLogger? logger = null)
+    public GameClient(Config config, NpcMemoryBank npcMemory, MapMovementMemoryBank movementMemory, MapExpRateMemoryBank expRateMemory, NavDataManager navDataManager, IAgentLogger? logger = null)
     {
         _config = config;
         _npcMemory = npcMemory;
         _movementMemory = movementMemory;
         _expRateMemory = expRateMemory;
+        _navDataManager = navDataManager;
         _logger = logger;
     }
 
