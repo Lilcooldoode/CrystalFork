@@ -38,6 +38,8 @@ public class BaseAI
     public BaseAI(GameClient client)
     {
         Client = client;
+        Client.ItemScoreFunc = GetItemScore;
+        Client.DesiredItemsProvider = () => DesiredItems;
     }
 
     protected virtual int WalkDelay => 600;

@@ -94,4 +94,30 @@ public sealed partial class GameClient
             cancellationToken.Register(() => tcs.TrySetCanceled());
         return tcs.Task;
     }
+
+    public Task<S.SellItem> WaitForSellItemAsync(ulong uniqueId, CancellationToken cancellationToken = default)
+    {
+        var tcs = new TaskCompletionSource<S.SellItem>();
+        _sellItemTcs[uniqueId] = tcs;
+        if (cancellationToken != default)
+            cancellationToken.Register(() =>
+            {
+                tcs.TrySetCanceled();
+                _sellItemTcs.Remove(uniqueId);
+            });
+        return tcs.Task;
+    }
+
+    public Task<S.RepairItem> WaitForRepairItemAsync(ulong uniqueId, CancellationToken cancellationToken = default)
+    {
+        var tcs = new TaskCompletionSource<S.RepairItem>();
+        _repairItemTcs[uniqueId] = tcs;
+        if (cancellationToken != default)
+            cancellationToken.Register(() =>
+            {
+                tcs.TrySetCanceled();
+                _repairItemTcs.Remove(uniqueId);
+            });
+        return tcs.Task;
+    }
 }

@@ -135,7 +135,12 @@ public sealed partial class GameClient
     private TaskCompletionSource<bool>? _npcGoodsTcs;
     private TaskCompletionSource<bool>? _npcSellTcs;
     private TaskCompletionSource<bool>? _npcRepairTcs;
+    private readonly Dictionary<ulong, TaskCompletionSource<S.SellItem>> _sellItemTcs = new();
+    private readonly Dictionary<ulong, TaskCompletionSource<S.RepairItem>> _repairItemTcs = new();
     private const int NpcResponseDebounceMs = 100;
+
+    private List<UserItem>? _lastNpcGoods;
+    private PanelType _lastNpcGoodsType;
 
 
     // Use a dictionary for faster lookups by item index
@@ -175,6 +180,113 @@ public sealed partial class GameClient
         }
     }
 
+    private static int DefaultItemScore(UserItem item, EquipmentSlot slot)
+    {
+        int score = 0;
+        if (item.Info != null)
+            score += item.Info.Stats.Count;
+        if (item.AddedStats != null)
+            score += item.AddedStats.Count;
+        return score;
+    }
+
+    private int GetItemScore(UserItem item, EquipmentSlot slot)
+    {
+        if (ItemScoreFunc != null)
+            return ItemScoreFunc(item, slot);
+        return DefaultItemScore(item, slot);
+    }
+
+    private static bool MatchesDesiredItem(UserItem item, DesiredItem desired)
+    {
+        if (item.Info == null) return false;
+        if (item.Info.Type != desired.Type) return false;
+        if (desired.Shape.HasValue && item.Info.Shape != desired.Shape.Value) return false;
+        if (desired.HpPotion.HasValue)
+        {
+            bool healsHP = item.Info.Stats[Stat.HP] > 0 || item.Info.Stats[Stat.HPRatePercent] > 0;
+            bool healsMP = item.Info.Stats[Stat.MP] > 0 || item.Info.Stats[Stat.MPRatePercent] > 0;
+            if (desired.HpPotion.Value && !healsHP) return false;
+            if (!desired.HpPotion.Value && !healsMP) return false;
+        }
+
+        return true;
+    }
+
+    private bool NeedMoreOfDesiredItem(DesiredItem desired)
+    {
+        if (_inventory == null) return false;
+        var matching = _inventory.Where(i => i != null && MatchesDesiredItem(i, desired)).ToList();
+
+        if (desired.Count.HasValue)
+            return matching.Count < desired.Count.Value;
+
+        if (desired.WeightFraction > 0)
+        {
+            int requiredWeight = (int)Math.Ceiling(GetMaxBagWeight() * desired.WeightFraction);
+            int currentWeight = matching.Sum(i => i.Weight);
+            return currentWeight < requiredWeight;
+        }
+
+        return false;
+    }
+
+    private async Task BuyNeededItemsFromGoodsAsync(List<UserItem> goods, PanelType type)
+    {
+        if (goods.Count == 0) return;
+
+        var desired = DesiredItemsProvider?.Invoke();
+        if (desired == null && _equipment == null) return;
+
+        foreach (var g in goods)
+            Bind(g);
+
+        foreach (var item in goods)
+        {
+            if (item.Info == null) continue;
+
+            bool need = false;
+
+            if (_equipment != null)
+            {
+                for (int slot = 0; slot < _equipment.Count(); slot++)
+                {
+                    var equipSlot = (EquipmentSlot)slot;
+                    if (!IsItemForSlot(item.Info, equipSlot)) continue;
+                    if (!CanEquipItem(item, equipSlot)) continue;
+                    var current = _equipment[slot];
+                    int newScore = GetItemScore(item, equipSlot);
+                    int currentScore = current != null ? GetItemScore(current, equipSlot) : -1;
+                    if (newScore > currentScore)
+                    {
+                        need = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!need && desired != null)
+            {
+                foreach (var d in desired)
+                {
+                    if (MatchesDesiredItem(item, d) && NeedMoreOfDesiredItem(d))
+                    {
+                        need = true;
+                        break;
+                    }
+                }
+            }
+
+            if (need && _gold >= item.Info.Price)
+            {
+                if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npc))
+                    Console.WriteLine($"I am buying {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold");
+                await BuyItemAsync(item.UniqueID, 1, type);
+                await Task.Delay(200);
+            }
+        }
+    }
+
     public IReadOnlyList<UserItem>? Inventory => _inventory;
     public IReadOnlyList<UserItem>? Equipment => _equipment;
 
@@ -194,6 +306,8 @@ public sealed partial class GameClient
     public UserItem? LastPickedItem => _lastPickedItem;
     public int HP => _hp;
     public int MP => _mp;
+    public Func<UserItem, EquipmentSlot, int>? ItemScoreFunc { get; set; }
+    public Func<IReadOnlyList<DesiredItem>>? DesiredItemsProvider { get; set; }
 
     private void ReportStatus()
     {
@@ -414,16 +528,17 @@ public sealed partial class GameClient
             seen.Add(item.Info.Type);
             _pendingSellChecks[item.UniqueID] = (entry, item.Info.Type);
             Console.WriteLine($"I am selling {item.Info.FriendlyName} to {entry.Name}");
+            using var cts = new CancellationTokenSource(2000);
+            var waitTask = WaitForSellItemAsync(item.UniqueID, cts.Token);
             await SendAsync(new C.SellItem { UniqueID = item.UniqueID, Count = 1 });
             try
             {
-                using var cts = new CancellationTokenSource(2000);
-                await WaitForLatestNpcResponseAsync(cts.Token);
+                await waitTask;
             }
             catch (OperationCanceledException)
             {
             }
-            await Task.Delay(100);
+            await Task.Delay(200);
         }
     }
 
@@ -441,16 +556,18 @@ public sealed partial class GameClient
             seen.Add(item.Info.Type);
             _pendingRepairChecks[item.UniqueID] = (entry, item.Info.Type);
             Console.WriteLine($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
-            await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+            using var cts = new CancellationTokenSource(2000);
+            var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
             {
-                using var cts = new CancellationTokenSource(2000);
-                await WaitForLatestNpcResponseAsync(cts.Token);
+
+                await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+                await waitTask;
             }
             catch (OperationCanceledException)
             {
             }
-            await Task.Delay(100);
+            await Task.Delay(200);
         }
     }
 
@@ -484,12 +601,20 @@ public sealed partial class GameClient
         if (type != PanelType.Buy && type != PanelType.BuySub)
             return;
 
+        _lastNpcGoods = goods.Select(g =>
+        {
+            Bind(g);
+            return g;
+        }).ToList();
+        _lastNpcGoodsType = type;
+
         entry.CanBuy = true;
         entry.BuyItemIndexes ??= new List<int>();
-        foreach (var it in goods)
+        foreach (var it in _lastNpcGoods)
         {
-            if (!entry.BuyItemIndexes.Contains(it.ItemIndex))
-                entry.BuyItemIndexes.Add(it.ItemIndex);
+            int index = it.Info?.Index ?? it.ItemIndex;
+            if (!entry.BuyItemIndexes.Contains(index))
+                entry.BuyItemIndexes.Add(index);
         }
 
         _npcMemory.SaveChanges();
@@ -560,6 +685,8 @@ public sealed partial class GameClient
         var waitTask = WaitForNpcGoodsAsync(cts.Token);
         try
         {
+            if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
+                Console.WriteLine($"I am looking at {entry.Name}'s goods list");
             await _npcInteraction.SelectFromMainAsync(key);
             await waitTask;
         }
@@ -604,12 +731,34 @@ public sealed partial class GameClient
         }
     };
 
+    private Func<Task> CreateCheckBuyTask(string key) => async () =>
+    {
+        if (_npcInteraction == null) return;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waitTask = WaitForNpcGoodsAsync(cts.Token);
+        try
+        {
+            if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
+                Console.WriteLine($"I am looking at {entry.Name}'s goods list");
+            await _npcInteraction.SelectFromMainAsync(key);
+            await waitTask;
+            if (_lastNpcGoods != null)
+                await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
+        }
+        finally
+        {
+            _processingNpcAction = false;
+            ProcessNpcActionQueue();
+        }
+    };
+
     private void HandleNpcDialogPage(NpcDialogPage page, NpcEntry entry)
     {
         var keyList = page.Buttons.Select(b => b.Key).ToList();
         var keys = new HashSet<string>(keyList.Select(k => k.ToUpper()));
 
         bool changed = false;
+        bool needBuyCheck = false;
 
         bool hasBuy = keys.Overlaps(new[] { "@BUY", "@BUYSELL", "@BUYNEW", "@BUYSELLNEW", "@PEARLBUY" });
         bool hasSell = keys.Overlaps(new[] { "@SELL", "@BUYSELL", "@BUYSELLNEW" });
@@ -626,10 +775,11 @@ public sealed partial class GameClient
                 entry.CanBuy = true;
                 changed = true;
             }
+            string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
+            buyKey = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
             if (entry.BuyItemIndexes == null)
             {
-                string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
-                buyKey = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
+                needBuyCheck = true;
                 if (buyKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
                 {
                     _skipNextGoods = true;
@@ -676,7 +826,7 @@ public sealed partial class GameClient
             }
         }
 
-        if (buyKey != null)
+        if (needBuyCheck && buyKey != null)
         {
             _npcActionTasks.Enqueue((buyKey, CreateBuyTask(buyKey)));
         }
@@ -687,6 +837,10 @@ public sealed partial class GameClient
         if (repairKey != null)
         {
             _npcActionTasks.Enqueue((repairKey, CreateRepairTask(repairKey)));
+        }
+        if (buyKey != null)
+        {
+            _npcActionTasks.Enqueue((buyKey, CreateCheckBuyTask(buyKey)));
         }
 
         if (changed)

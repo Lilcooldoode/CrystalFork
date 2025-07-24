@@ -163,6 +163,7 @@ public sealed partial class GameClient
                 _mp = info.MP;
                 _inventory = info.Inventory;
                 _equipment = info.Equipment;
+                _gold = info.Gold;
                 BindAll(_inventory);
                 BindAll(_equipment);
                 MarkStatsDirty();
@@ -552,6 +553,11 @@ public sealed partial class GameClient
                 }
                 break;
             case S.SellItem sell:
+                if (_sellItemTcs.TryGetValue(sell.UniqueID, out var sellTcs))
+                {
+                    sellTcs.TrySetResult(sell);
+                    _sellItemTcs.Remove(sell.UniqueID);
+                }
                 if (_pendingSellChecks.TryGetValue(sell.UniqueID, out var infoSell))
                 {
                     if (sell.Success)
@@ -611,6 +617,13 @@ public sealed partial class GameClient
                         }
                     }
                     _pendingSellChecks.Remove(sell.UniqueID);
+                }
+                break;
+            case S.RepairItem repair:
+                if (_repairItemTcs.TryGetValue(repair.UniqueID, out var repairTcs))
+                {
+                    repairTcs.TrySetResult(repair);
+                    _repairItemTcs.Remove(repair.UniqueID);
                 }
                 break;
             case S.ItemRepaired ir:

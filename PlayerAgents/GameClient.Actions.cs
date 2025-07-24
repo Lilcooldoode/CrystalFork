@@ -221,4 +221,16 @@ public sealed partial class GameClient
         };
         await SendAsync(sell);
     }
+
+    public async Task BuyItemAsync(ulong uniqueId, ushort count, PanelType type)
+    {
+        if (_stream == null) return;
+        var buy = new C.BuyItem
+        {
+            ItemIndex = uniqueId,
+            Count = count,
+            Type = type
+        };
+        await SendAsync(buy);
+    }
 }
