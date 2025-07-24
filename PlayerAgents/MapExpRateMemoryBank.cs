@@ -62,7 +62,7 @@ public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
         {
             ReloadIfUpdated();
             return _entries
-                .Where(e => e.Class == playerClass && e.Level == level)
+                .Where(e => e.Class == playerClass && e.Level == level && e.ExpPerHour > 0)
                 .OrderByDescending(e => e.ExpPerHour)
                 .Select(e => e.MapFile)
                 .FirstOrDefault();

@@ -53,6 +53,7 @@ public class BaseAI
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
     private DateTime _nextBestMapCheck = DateTime.MinValue;
+    private DateTime _travelPauseUntil = DateTime.MinValue;
     private List<MapMovementEntry>? _travelPath;
     private int _travelIndex;
     
@@ -345,6 +346,9 @@ public class BaseAI
 
     private Task<bool> TravelToMapAsync(string destMapFile)
     {
+        if (DateTime.UtcNow < _travelPauseUntil)
+            return Task.FromResult(false);
+
         var startMap = Path.GetFileNameWithoutExtension(Client.CurrentMapFile);
         var destMap = Path.GetFileNameWithoutExtension(destMapFile);
         if (startMap == destMap)
@@ -380,7 +384,13 @@ public class BaseAI
         }
 
         if (path == null)
+        {
+            _travelPath = null;
+            _searchDestination = null;
+            _travelPauseUntil = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+            _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromSeconds(10);
             return Task.FromResult(false);
+        }
 
         _travelPath = path;
         _travelIndex = 0;
@@ -430,7 +440,7 @@ public class BaseAI
 
     private async Task ProcessBestMapAsync()
     {
-        if (DateTime.UtcNow < _nextBestMapCheck) return;
+        if (DateTime.UtcNow < _nextBestMapCheck || DateTime.UtcNow < _travelPauseUntil) return;
         _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromHours(2);
 
         var best = Client.GetBestMapForLevel();
@@ -440,7 +450,11 @@ public class BaseAI
         if (!string.Equals(Client.CurrentMapFile, target, StringComparison.OrdinalIgnoreCase))
         {
             Client.Log($"Travelling to best map {best}");
-            await TravelToMapAsync(target);
+            if (!await TravelToMapAsync(target))
+            {
+                _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+                return;
+            }
             _currentRoamPath = null;
             _lostTargetLocation = null;
             _lostTargetPath = null;
@@ -718,7 +732,7 @@ public class BaseAI
             Client.ProcessMapExpRateInterval();
             await ProcessBestMapAsync();
             UpdateTravelDestination();
-            bool traveling = _travelPath != null;
+            bool traveling = _travelPath != null && DateTime.UtcNow >= _travelPauseUntil;
             if (traveling)
             {
                 _currentTarget = null;
@@ -957,10 +971,19 @@ public class BaseAI
                         {
                             _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value, 0, 0);
                             _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
+                            if (_currentRoamPath.Count == 0)
+                            {
+                                _travelPath = null;
+                                _searchDestination = null;
+                                _currentRoamPath = null;
+                                _travelPauseUntil = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+                                _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+                                traveling = false;
+                            }
                         }
                     }
 
-                    if (_currentRoamPath != null && _currentRoamPath.Count > 0)
+                    if (traveling && _currentRoamPath != null && _currentRoamPath.Count > 0)
                     {
                         bool moved = await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
                         if (!moved)
