@@ -186,7 +186,7 @@ internal class Program
 
             IAgentLogger logger = agentConfigs.Count > 1
                 ? new SummaryAgentLogger() as IAgentLogger
-                : new NullAgentLogger();
+                : new ConsoleAgentLogger();
 
             if (agentConfigs.Count > 1)
                 Console.SetOut(TextWriter.Null);

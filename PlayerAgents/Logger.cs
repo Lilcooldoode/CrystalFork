@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Drawing;
 using System.IO;
 
@@ -33,29 +34,26 @@ public sealed class ConsoleAgentLogger : IAgentLogger
     }
 }
 
-public sealed class NullAgentLogger : IAgentLogger
-{
-    public void RegisterAgent(string agent)
-    {
-        // no-op
-    }
-
-    public void UpdateStatus(string agent, AgentStatus status)
-    {
-        // no-op
-    }
-}
-
-public sealed class SummaryAgentLogger : IAgentLogger
+public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
 {
     private readonly Dictionary<string, AgentStatus> _status = new();
     private readonly List<string> _order = new();
     private readonly object _lockObj = new();
+    private readonly Timer _timer;
     private int _lastLineCount;
 
     public SummaryAgentLogger()
     {
+        _timer = new Timer(_ =>
+        {
+            lock (_lockObj)
+            {
+                Render();
+            }
+        }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
     }
+
+    public void Dispose() => _timer.Dispose();
 
     public void RegisterAgent(string agent)
     {
@@ -65,6 +63,7 @@ public sealed class SummaryAgentLogger : IAgentLogger
             {
                 _status[agent] = new AgentStatus();
                 _order.Add(agent);
+                Render();
             }
         }
     }
@@ -82,17 +81,11 @@ public sealed class SummaryAgentLogger : IAgentLogger
             {
                 _status[agent] = status;
             }
-
-            if (_order.Count > 1)
-                Render();
         }
     }
 
     private void Render()
     {
-        if (_order.Count <= 1)
-            return;
-
         Console.CursorVisible = false;
         int colWidth = Math.Max(20, Console.WindowWidth / 4);
         var lines = new List<string>();
