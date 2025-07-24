@@ -34,6 +34,19 @@ public sealed class ConsoleAgentLogger : IAgentLogger
     }
 }
 
+public sealed class NullAgentLogger : IAgentLogger
+{
+    public void RegisterAgent(string agent)
+    {
+        // no-op
+    }
+
+    public void UpdateStatus(string agent, AgentStatus status)
+    {
+        // no-op
+    }
+}
+
 public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
 {
     private readonly Dictionary<string, AgentStatus> _status = new();
