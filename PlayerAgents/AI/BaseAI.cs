@@ -58,6 +58,7 @@ public class BaseAI
     private static readonly TimeSpan MonsterIgnoreDelay = TimeSpan.FromSeconds(10);
     private bool _sentRevive;
     private bool _sellingItems;
+    private bool _repairingItems;
 
     protected virtual int GetItemScore(UserItem item, EquipmentSlot slot)
     {
@@ -500,6 +501,86 @@ public class BaseAI
         Client.UpdateAction("roaming...");
     }
 
+    private async Task HandleEquipmentRepairsAsync()
+    {
+        if (_repairingItems) return;
+        var equipment = Client.Equipment;
+        if (equipment == null) return;
+
+        var toRepair = equipment.Where(i => i != null && i.Info != null && i.CurrentDura < i.MaxDura).ToList();
+        if (toRepair.Count == 0) return;
+
+        bool urgent = toRepair.Any(i => i.MaxDura > 0 && i.CurrentDura <= i.MaxDura * 0.05);
+        if (!urgent) return;
+
+        _repairingItems = true;
+        Client.UpdateAction("repairing items...");
+        Client.IgnoreNpcInteractions = true;
+
+        var types = toRepair.Select(i => i!.Info!.Type).Distinct().ToList();
+        while (types.Count > 0)
+        {
+            if (!Client.TryFindNearestRepairNpc(types, out var npcId, out var loc, out var entry, out var matched, includeUnknowns: false))
+                break;
+
+            if (entry != null)
+            {
+                var itemNames = toRepair.Where(i => i.Info != null && matched.Contains(i.Info.Type))
+                    .Select(i => i.Info!.FriendlyName)
+                    .ToList();
+                if (itemNames.Count > 0)
+                    Console.WriteLine($"I am heading to {entry.Name} at {loc.X}, {loc.Y} to repair {string.Join(", ", itemNames)}");
+            }
+
+            var map = Client.CurrentMap;
+            if (map == null) break;
+            bool foundPath = true;
+            while (Functions.MaxDistance(Client.CurrentLocation, loc) > 6)
+            {
+                var path = await FindPathAsync(map, Client.CurrentLocation, loc, npcId, 6);
+                if (path.Count == 0)
+                {
+                    Console.WriteLine($"Could not path to {entry?.Name ?? npcId.ToString()}");
+                    foundPath = false;
+                    break;
+                }
+                await MoveAlongPathAsync(path, loc);
+                await Task.Delay(WalkDelay);
+                map = Client.CurrentMap;
+                if (map == null) break;
+            }
+
+            if (Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
+            {
+                if (npcId == 0)
+                    Client.TryFindNearestRepairNpc(types, out npcId, out _, out entry, out matched, includeUnknowns: false);
+
+                if (npcId == 0 || entry != null)
+                    npcId = await Client.ResolveNpcIdAsync(entry);
+
+                if (npcId != 0)
+                {
+                    await Client.RepairItemsAtNpcAsync(npcId);
+                    Console.WriteLine($"Finished repairing at {entry?.Name ?? npcId.ToString()}");
+                    foreach (var t in matched)
+                        types.Remove(t);
+                }
+                else
+                {
+                    Console.WriteLine("Could not find NPC to repair items");
+                    break;
+                }
+            }
+
+            if (!foundPath) break;
+        }
+
+        Client.IgnoreNpcInteractions = false;
+        Client.ResumeNpcInteractions();
+        _repairingItems = false;
+        Client.UpdateAction("roaming...");
+    }
+
     public virtual async Task RunAsync()
     {
         Point current;
@@ -523,6 +604,8 @@ public class BaseAI
                 await CheckEquipmentAsync();
                 _nextEquipCheck = DateTime.UtcNow + EquipCheckInterval;
             }
+
+            await HandleEquipmentRepairsAsync();
 
             await TryUsePotionsAsync();
 
@@ -739,6 +822,10 @@ public class BaseAI
             if (_sellingItems)
             {
                 Client.UpdateAction("selling items");
+            }
+            else if (_repairingItems)
+            {
+                Client.UpdateAction("repairing items...");
             }
             else if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
             {

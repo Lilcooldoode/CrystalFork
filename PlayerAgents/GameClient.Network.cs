@@ -635,6 +635,36 @@ public sealed partial class GameClient
                 {
                     _pendingRepairChecks.Remove(ir.UniqueID);
                 }
+                bool eqChanged = false;
+                if (_inventory != null)
+                {
+                    int idx = Array.FindIndex(_inventory, x => x != null && x.UniqueID == ir.UniqueID);
+                    if (idx >= 0)
+                    {
+                        var item = _inventory[idx];
+                        if (item != null)
+                        {
+                            item.MaxDura = ir.MaxDura;
+                            item.CurrentDura = ir.CurrentDura;
+                        }
+                    }
+                }
+                if (_equipment != null)
+                {
+                    int idx = Array.FindIndex(_equipment, x => x != null && x.UniqueID == ir.UniqueID);
+                    if (idx >= 0)
+                    {
+                        var item = _equipment[idx];
+                        if (item != null)
+                        {
+                            item.MaxDura = ir.MaxDura;
+                            item.CurrentDura = ir.CurrentDura;
+                            eqChanged = true;
+                        }
+                    }
+                }
+                if (eqChanged)
+                    MarkStatsDirty();
                 break;
             case S.KeepAlive keep:
                 _pingTime = Environment.TickCount64 - keep.Time;

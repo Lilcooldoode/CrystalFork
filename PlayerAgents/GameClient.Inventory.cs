@@ -53,6 +53,50 @@ public sealed partial class GameClient
         return entry != null;
     }
 
+    public bool TryFindNearestRepairNpc(ItemType type, out uint id, out Point location, out NpcEntry? entry, bool includeUnknowns = true)
+    {
+        id = 0;
+        location = default;
+        entry = null;
+        if (string.IsNullOrEmpty(_currentMapFile))
+            return false;
+
+        int bestDist = int.MaxValue;
+        string map = Path.GetFileNameWithoutExtension(_currentMapFile);
+
+        foreach (var e in _npcMemory.GetAll())
+        {
+            if (e.MapFile != map) continue;
+            bool knows = e.RepairItemTypes != null && e.RepairItemTypes.Contains(type);
+            bool unknown = e.CanRepair &&
+                (e.RepairItemTypes == null || !e.RepairItemTypes.Contains(type)) &&
+                (e.CannotRepairItemTypes == null || !e.CannotRepairItemTypes.Contains(type));
+            if (!knows && (!includeUnknowns || !unknown)) continue;
+
+            int dist = Functions.MaxDistance(_currentLocation, new Point(e.X, e.Y));
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                entry = e;
+                location = new Point(e.X, e.Y);
+            }
+        }
+
+        if (entry != null)
+        {
+            foreach (var kv in _npcEntries)
+            {
+                if (kv.Value == entry)
+                {
+                    id = kv.Key;
+                    break;
+                }
+            }
+        }
+
+        return entry != null;
+    }
+
     public bool TryFindNearestNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes, bool includeUnknowns = true)
     {
         id = 0;
@@ -87,6 +131,58 @@ public sealed partial class GameClient
                 entry = e;
                 location = new Point(e.X, e.Y);
                 matchedTypes = sells;
+            }
+        }
+
+        if (entry != null)
+        {
+            foreach (var kv in _npcEntries)
+            {
+                if (kv.Value == entry)
+                {
+                    id = kv.Key;
+                    break;
+                }
+            }
+        }
+
+        return entry != null;
+    }
+
+    public bool TryFindNearestRepairNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes, bool includeUnknowns = true)
+    {
+        id = 0;
+        location = default;
+        entry = null;
+        matchedTypes = new List<ItemType>();
+        if (string.IsNullOrEmpty(_currentMapFile))
+            return false;
+
+        int bestDist = int.MaxValue;
+        string map = Path.GetFileNameWithoutExtension(_currentMapFile);
+
+        foreach (var e in _npcMemory.GetAll())
+        {
+            if (e.MapFile != map) continue;
+            var repairs = new List<ItemType>();
+            foreach (var t in types)
+            {
+                bool knows = e.RepairItemTypes != null && e.RepairItemTypes.Contains(t);
+                bool unknown = e.CanRepair &&
+                    (e.RepairItemTypes == null || !e.RepairItemTypes.Contains(t)) &&
+                    (e.CannotRepairItemTypes == null || !e.CannotRepairItemTypes.Contains(t));
+                if (knows || (includeUnknowns && unknown))
+                    repairs.Add(t);
+            }
+            if (repairs.Count == 0) continue;
+
+            int dist = Functions.MaxDistance(_currentLocation, new Point(e.X, e.Y));
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                entry = e;
+                location = new Point(e.X, e.Y);
+                matchedTypes = repairs;
             }
         }
 
@@ -148,6 +244,39 @@ public sealed partial class GameClient
         try
         {
             using var cts = new System.Threading.CancellationTokenSource(200);
+            await WaitForLatestNpcResponseAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public async Task RepairItemsAtNpcAsync(uint npcId)
+    {
+        var entry = await ResolveNpcEntryAsync(npcId);
+        if (entry == null) return;
+        var interaction = new NPCInteraction(this, npcId);
+        var page = await interaction.BeginAsync();
+        string[] repairKeys = { "@SREPAIR", "@REPAIR" };
+        var repairKey = page.Buttons.Select(b => b.Key).FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
+        if (repairKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
+            return;
+        using (var cts = new CancellationTokenSource(2000))
+        {
+            var waitTask = WaitForLatestNpcResponseAsync(cts.Token);
+            await interaction.SelectFromMainAsync(repairKey);
+            try
+            {
+                await waitTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+        await RepairNeededItemsAsync(entry);
+        try
+        {
+            using var cts = new CancellationTokenSource(200);
             await WaitForLatestNpcResponseAsync(cts.Token);
         }
         catch (OperationCanceledException)

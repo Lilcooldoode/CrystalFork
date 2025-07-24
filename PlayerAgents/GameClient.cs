@@ -644,11 +644,33 @@ public sealed partial class GameClient
 
     private async Task DetermineRepairTypesAsync(NpcEntry entry)
     {
-        if (_inventory == null) return;
+        if (_inventory == null && _equipment == null) return;
         var seen = new HashSet<ItemType>();
         if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
         if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
-        foreach (var item in _inventory)
+
+        var items = new List<(UserItem item, EquipmentSlot? slot)>();
+
+        if (_inventory != null)
+        {
+            foreach (var item in _inventory)
+            {
+                if (item == null) continue;
+                items.Add((item, null));
+            }
+        }
+
+        if (_equipment != null)
+        {
+            for (int i = 0; i < _equipment.Length; i++)
+            {
+                var item = _equipment[i];
+                if (item == null) continue;
+                items.Add((item, (EquipmentSlot)i));
+            }
+        }
+
+        foreach (var (item, slot) in items)
         {
             if (item == null || item.Info == null) continue;
             if (item.CurrentDura == item.MaxDura) continue;
@@ -660,6 +682,12 @@ public sealed partial class GameClient
             var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
             {
+                if (slot.HasValue)
+                {
+                    await UnequipItemAsync(slot.Value);
+                    await Task.Delay(200);
+                }
+
                 await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
                 var success = await waitTask;
                 if (success)
@@ -684,7 +712,68 @@ public sealed partial class GameClient
             catch (OperationCanceledException)
             {
             }
+            finally
+            {
+                if (slot.HasValue)
+                {
+                    await EquipItemAsync(item, slot.Value);
+                    await Task.Delay(200);
+                }
+            }
             await Task.Delay(200);
+        }
+    }
+
+    private async Task RepairNeededItemsAsync(NpcEntry entry)
+    {
+        if (_inventory == null || _equipment == null) return;
+        if (entry.RepairItemTypes == null || entry.RepairItemTypes.Count == 0) return;
+
+        var items = new List<(UserItem item, EquipmentSlot? slot)>();
+
+        for (int i = 0; i < _equipment.Length; i++)
+        {
+            var item = _equipment[i];
+            if (item?.Info == null) continue;
+            if (item.CurrentDura == item.MaxDura) continue;
+            if (!entry.RepairItemTypes.Contains(item.Info.Type)) continue;
+            items.Add((item, (EquipmentSlot)i));
+        }
+
+        foreach (var item in _inventory)
+        {
+            if (item?.Info == null) continue;
+            if (item.CurrentDura == item.MaxDura) continue;
+            if (!entry.RepairItemTypes.Contains(item.Info.Type)) continue;
+            items.Add((item, null));
+        }
+
+        foreach (var (item, slot) in items)
+        {
+            if (slot.HasValue)
+            {
+                await UnequipItemAsync(slot.Value);
+                await Task.Delay(200);
+            }
+
+            Console.WriteLine($"I am repairing {item.Info?.FriendlyName ?? "item"} at {entry.Name}");
+            using var cts = new CancellationTokenSource(2000);
+            var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
+            try
+            {
+                await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+                await waitTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            await Task.Delay(200);
+
+            if (slot.HasValue)
+            {
+                await EquipItemAsync(item, slot.Value);
+                await Task.Delay(200);
+            }
         }
     }
 
@@ -705,11 +794,16 @@ public sealed partial class GameClient
 
     private bool HasUnknownRepairTypes(NpcEntry entry)
     {
-        if (_inventory == null) return false;
+        if (_inventory == null && _equipment == null) return false;
         var seen = new HashSet<ItemType>();
         if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
         if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
-        foreach (var item in _inventory)
+
+        IEnumerable<UserItem?> items = _inventory ?? Array.Empty<UserItem?>();
+        if (_equipment != null)
+            items = items.Concat(_equipment);
+
+        foreach (var item in items)
         {
             if (item?.Info == null) continue;
             if (item.CurrentDura == item.MaxDura) continue;
@@ -912,6 +1006,30 @@ public sealed partial class GameClient
         }
     };
 
+    private Func<Task> CreateCheckRepairTask(string key) => async () =>
+    {
+        if (_npcInteraction == null) return;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waitTask = WaitForNpcRepairAsync(cts.Token);
+        try
+        {
+            await _npcInteraction.SelectFromMainAsync(key);
+            await waitTask;
+            if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
+            {
+                await RepairNeededItemsAsync(entry);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _processingNpcAction = false;
+            ProcessNpcActionQueue();
+        }
+    };
+
     private void HandleNpcDialogPage(NpcDialogPage page, NpcEntry entry)
     {
         var keyList = page.Buttons.Select(b => b.Key).ToList();
@@ -1001,6 +1119,7 @@ public sealed partial class GameClient
         if (repairKey != null)
         {
             _npcActionTasks.Enqueue((repairKey, CreateRepairTask(repairKey)));
+            _npcActionTasks.Enqueue((repairKey, CreateCheckRepairTask(repairKey)));
         }
         if (buyKey != null)
         {
