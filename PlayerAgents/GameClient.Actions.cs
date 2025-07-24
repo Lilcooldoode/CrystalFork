@@ -141,6 +141,24 @@ public sealed partial class GameClient
             case RequiredType.Level:
                 if (_level < item.Info.RequiredAmount) return false;
                 break;
+            case RequiredType.MaxDC:
+                if (GetStatTotal(Stat.MaxDC) < item.Info.RequiredAmount) return false;
+                break;
+            case RequiredType.MaxMC:
+                if (GetStatTotal(Stat.MaxMC) < item.Info.RequiredAmount) return false;
+                break;
+            case RequiredType.MaxSC:
+                if (GetStatTotal(Stat.MaxSC) < item.Info.RequiredAmount) return false;
+                break;
+            case RequiredType.MinDC:
+                if (GetStatTotal(Stat.MinDC) < item.Info.RequiredAmount) return false;
+                break;
+            case RequiredType.MinMC:
+                if (GetStatTotal(Stat.MinMC) < item.Info.RequiredAmount) return false;
+                break;
+            case RequiredType.MinSC:
+                if (GetStatTotal(Stat.MinSC) < item.Info.RequiredAmount) return false;
+                break;
             case RequiredType.MaxLevel:
                 if (_level > item.Info.RequiredAmount) return false;
                 break;

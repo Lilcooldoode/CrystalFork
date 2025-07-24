@@ -530,6 +530,31 @@ public sealed partial class GameClient
         return flat + (max * percent) / 100;
     }
 
+    public int GetStatTotal(Stat stat)
+    {
+        int total = 0;
+
+        if (_playerClass != null)
+        {
+            _baseStats ??= new BaseStats(_playerClass.Value);
+            var baseStat = _baseStats.Stats.FirstOrDefault(s => s.Type == stat);
+            if (baseStat != null)
+                total += baseStat.Calculate(_playerClass.Value, _level);
+        }
+
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item == null || item.Info == null) continue;
+                total += item.Info.Stats[stat];
+                total += item.AddedStats[stat];
+            }
+        }
+
+        return total;
+    }
+
     private async Task HarvestLoopAsync(TrackedObject monster)
     {
         _awaitingHarvest = true;
