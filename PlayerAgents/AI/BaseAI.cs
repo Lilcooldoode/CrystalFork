@@ -3,8 +3,10 @@ using Shared;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using PlayerAgents.Map;
 
 public class BaseAI
 {
@@ -50,6 +52,9 @@ public class BaseAI
     private DateTime _nextEquipCheck = DateTime.UtcNow;
     private DateTime _nextAttackTime = DateTime.UtcNow;
     private DateTime _nextPotionTime = DateTime.MinValue;
+    private DateTime _nextBestMapCheck = DateTime.MinValue;
+    private List<MapMovementEntry>? _travelPath;
+    private int _travelIndex;
     
     private readonly Dictionary<(Point Location, string Name), DateTime> _itemRetryTimes = new();
     private readonly Dictionary<uint, DateTime> _monsterIgnoreTimes = new();
@@ -328,6 +333,111 @@ public class BaseAI
         return false;
     }
 
+    private Task<bool> TravelToMapAsync(string destMapFile)
+    {
+        var startMap = Path.GetFileNameWithoutExtension(Client.CurrentMapFile);
+        var destMap = Path.GetFileNameWithoutExtension(destMapFile);
+        if (startMap == destMap)
+        {
+            _travelPath = null;
+            _searchDestination = null;
+            return Task.FromResult(true);
+        }
+
+        var entries = Client.MovementMemory.GetAll();
+        var queue = new Queue<(string Map, List<MapMovementEntry> Path)>();
+        var visited = new HashSet<string> { startMap };
+        queue.Enqueue((startMap, new List<MapMovementEntry>()));
+        List<MapMovementEntry>? path = null;
+
+        while (queue.Count > 0)
+        {
+            var (map, soFar) = queue.Dequeue();
+            if (map == destMap)
+            {
+                path = soFar;
+                break;
+            }
+
+            foreach (var e in entries)
+            {
+                if (e.SourceMap != map) continue;
+                if (visited.Contains(e.DestinationMap)) continue;
+                visited.Add(e.DestinationMap);
+                var newList = new List<MapMovementEntry>(soFar) { e };
+                queue.Enqueue((e.DestinationMap, newList));
+            }
+        }
+
+        if (path == null)
+            return Task.FromResult(false);
+
+        _travelPath = path;
+        _travelIndex = 0;
+        UpdateTravelDestination();
+        return Task.FromResult(true);
+    }
+
+    private void UpdateTravelDestination()
+    {
+        if (_travelPath == null) return;
+        if (_travelIndex >= _travelPath.Count)
+        {
+            _travelPath = null;
+            _searchDestination = null;
+            return;
+        }
+
+        string current = Path.GetFileNameWithoutExtension(Client.CurrentMapFile);
+        var step = _travelPath[_travelIndex];
+
+        if (current == step.DestinationMap)
+        {
+            _travelIndex++;
+            if (_travelIndex >= _travelPath.Count)
+            {
+                _travelPath = null;
+                _searchDestination = null;
+                return;
+            }
+            step = _travelPath[_travelIndex];
+        }
+        else if (current != step.SourceMap)
+        {
+            _travelPath = null;
+            _searchDestination = null;
+            return;
+        }
+
+        var dest = new Point(step.SourceX, step.SourceY);
+        if (_searchDestination == null || _searchDestination.Value != dest)
+        {
+            _searchDestination = dest;
+            _currentRoamPath = null;
+            _nextPathFindTime = DateTime.MinValue;
+        }
+    }
+
+    private async Task ProcessBestMapAsync()
+    {
+        if (DateTime.UtcNow < _nextBestMapCheck) return;
+        _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromHours(2);
+
+        var best = Client.GetBestMapForLevel();
+        if (best == null) return;
+
+        var target = Path.Combine(MapManager.MapDirectory, best + ".map");
+        if (!string.Equals(Client.CurrentMapFile, target, StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"Travelling to best map {best}");
+            await TravelToMapAsync(target);
+            _currentRoamPath = null;
+            _lostTargetLocation = null;
+            _lostTargetPath = null;
+            _currentTarget = null;
+        }
+    }
+
     private static bool MatchesDesiredItem(UserItem item, DesiredItem desired)
     {
         if (item.Info == null) return false;
@@ -586,6 +696,7 @@ public class BaseAI
     public virtual async Task RunAsync()
     {
         Point current;
+        _nextBestMapCheck = DateTime.UtcNow;
         while (true)
         {
             if (await HandleReviveAsync())
@@ -595,6 +706,15 @@ public class BaseAI
                 continue;
 
             Client.ProcessMapExpRateInterval();
+            await ProcessBestMapAsync();
+            UpdateTravelDestination();
+            bool traveling = _travelPath != null;
+            if (traveling)
+            {
+                _currentTarget = null;
+                _lostTargetLocation = null;
+                _lostTargetPath = null;
+            }
             if (Client.IsProcessingNpc)
             {
                 await Task.Delay(WalkDelay);
@@ -661,10 +781,10 @@ public class BaseAI
                 if (_currentTarget.Dead)
                     _nextTargetSwitchTime = DateTime.MinValue;
             }
-            int distance;
-            var closest = FindClosestTarget(current, out distance);
+            int distance = 0;
+            TrackedObject? closest = traveling ? null : FindClosestTarget(current, out distance);
 
-            if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster &&
+            if (!traveling && _currentTarget != null && _currentTarget.Type == ObjectType.Monster &&
                 !_currentTarget.Dead &&
                 Client.TrackedObjects.ContainsKey(_currentTarget.Id) &&
                 closest != null && closest.Type == ObjectType.Monster &&
@@ -736,7 +856,7 @@ public class BaseAI
             else
             {
                 _currentTarget = null;
-                if (_lostTargetLocation.HasValue)
+                if (!traveling && _lostTargetLocation.HasValue)
                 {
                     if (Functions.MaxDistance(current, _lostTargetLocation.Value) <= 0)
                     {
@@ -776,7 +896,7 @@ public class BaseAI
                     }
                 }
 
-                if (!_lostTargetLocation.HasValue)
+                if (!traveling && !_lostTargetLocation.HasValue)
                 {
                     if (_searchDestination == null ||
                         Functions.MaxDistance(current, _searchDestination.Value) <= 1 ||
@@ -792,7 +912,7 @@ public class BaseAI
                     {
                         if (DateTime.UtcNow >= _nextPathFindTime)
                         {
-                            _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value);
+                            _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value, 0, 0);
                             _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
                             if (_currentRoamPath.Count == 0)
                             {
@@ -819,6 +939,32 @@ public class BaseAI
                         }
                     }
                 }
+                else if (traveling && _searchDestination.HasValue)
+                {
+                    if (_currentRoamPath == null || _currentRoamPath.Count <= 1)
+                    {
+                        if (DateTime.UtcNow >= _nextPathFindTime)
+                        {
+                            _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value, 0, 0);
+                            _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
+                        }
+                    }
+
+                    if (_currentRoamPath != null && _currentRoamPath.Count > 0)
+                    {
+                        bool moved = await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
+                        if (!moved)
+                        {
+                            _currentRoamPath = null;
+                            _nextPathFindTime = DateTime.MinValue;
+                        }
+                        else if (_currentRoamPath.Count <= 1)
+                        {
+                            _currentRoamPath = null;
+                            _nextPathFindTime = DateTime.MinValue;
+                        }
+                    }
+                }
             }
 
             if (_sellingItems)
@@ -828,6 +974,10 @@ public class BaseAI
             else if (_repairingItems)
             {
                 Client.UpdateAction("repairing items...");
+            }
+            else if (traveling)
+            {
+                Client.UpdateAction("travelling...");
             }
             else if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
             {

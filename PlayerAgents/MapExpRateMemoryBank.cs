@@ -55,4 +55,17 @@ public sealed class MapExpRateMemoryBank : MemoryBankBase<MapExpRateEntry>
         if (added)
             Save();
     }
+
+    public string? GetBestMapFile(MirClass playerClass, ushort level)
+    {
+        lock (_lock)
+        {
+            ReloadIfUpdated();
+            return _entries
+                .Where(e => e.Class == playerClass && e.Level == level)
+                .OrderByDescending(e => e.ExpPerHour)
+                .Select(e => e.MapFile)
+                .FirstOrDefault();
+        }
+    }
 }

@@ -10,6 +10,7 @@ public sealed partial class GameClient
         var target = Functions.PointMove(_currentLocation, direction, 1);
         await TryOpenDoorAsync(target);
         Console.WriteLine($"I am walking to {target.X}, {target.Y}");
+        _pendingMoveTarget = target;
         var walk = new C.Walk { Direction = direction };
         await SendAsync(walk);
         _lastMoveTime = DateTime.UtcNow;
@@ -24,6 +25,7 @@ public sealed partial class GameClient
         await TryOpenDoorAsync(first);
         await TryOpenDoorAsync(target);
         Console.WriteLine($"I am running to {target.X}, {target.Y}");
+        _pendingMoveTarget = target;
         var run = new C.Run { Direction = direction };
         await SendAsync(run);
         _lastMoveTime = DateTime.UtcNow;

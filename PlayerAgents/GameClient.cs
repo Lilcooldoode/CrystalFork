@@ -30,6 +30,7 @@ public sealed partial class GameClient
     private BaseStats? _baseStats;
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
+    private Point? _pendingMoveTarget;
     private string _playerName = string.Empty;
     private string _currentAction = string.Empty;
     private uint _objectId;
@@ -381,6 +382,8 @@ public sealed partial class GameClient
     public UserItem? LastPickedItem => _lastPickedItem;
     public int HP => _hp;
     public int MP => _mp;
+    public MapMovementMemoryBank MovementMemory => _movementMemory;
+    public MapExpRateMemoryBank ExpRateMemory => _expRateMemory;
     public Func<UserItem, EquipmentSlot, int>? ItemScoreFunc { get; set; }
     public Func<IReadOnlyList<DesiredItem>>? DesiredItemsProvider { get; set; }
 
@@ -451,6 +454,12 @@ public sealed partial class GameClient
             }
             StartMapExpTracking(_currentMapFile);
         }
+    }
+
+    public string? GetBestMapForLevel()
+    {
+        if (_playerClass == null) return null;
+        return _expRateMemory.GetBestMapFile(_playerClass.Value, _level);
     }
 
     private Task RandomStartupDelayAsync() => Task.Delay(_random.Next(1000, 3000));

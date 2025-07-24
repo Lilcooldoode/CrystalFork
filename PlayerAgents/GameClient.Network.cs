@@ -117,14 +117,21 @@ public sealed partial class GameClient
                 break;
             case S.ObjectTeleportOut oto:
                 if (oto.ObjectID == _objectId)
+                {
                     _suppressNextMovement = true;
+                    _pendingMoveTarget = null;
+                }
                 break;
             case S.ObjectTeleportIn oti:
                 if (oti.ObjectID == _objectId)
+                {
                     _suppressNextMovement = true;
+                    _pendingMoveTarget = null;
+                }
                 break;
             case S.TeleportIn:
                 _suppressNextMovement = true;
+                _pendingMoveTarget = null;
                 break;
             case S.MapInformation mi:
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mi.FileName + ".map");
@@ -136,8 +143,10 @@ public sealed partial class GameClient
             case S.MapChanged mc:
                 if (!string.IsNullOrEmpty(_currentMapFile) && !_suppressNextMovement && !_dead)
                 {
-                    _movementMemory.AddMovement(_currentMapFile, _currentLocation, mc.FileName, mc.Location);
+                    var srcLoc = _pendingMoveTarget ?? _currentLocation;
+                    _movementMemory.AddMovement(_currentMapFile, srcLoc, mc.FileName, mc.Location);
                 }
+                _pendingMoveTarget = null;
                 FinalizeMapExpRate();
                 _suppressNextMovement = false;
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
@@ -223,6 +232,7 @@ public sealed partial class GameClient
                     _currentLocation = ow.Location;
                     _lastMoveTime = DateTime.UtcNow;
                     _canRun = true;
+                    _pendingMoveTarget = null;
                 }
                 break;
             case S.ObjectRun oru:
@@ -231,6 +241,7 @@ public sealed partial class GameClient
                 {
                     _currentLocation = oru.Location;
                     _lastMoveTime = DateTime.UtcNow;
+                    _pendingMoveTarget = null;
                 }
                 break;
             case S.Struck st:
