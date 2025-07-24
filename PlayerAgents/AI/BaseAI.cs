@@ -299,6 +299,8 @@ public class BaseAI
     {
         try
         {
+            if (start == dest)
+                return new List<Point>();
             var obstacles = BuildObstacles(ignoreId, radius);
             return await PlayerAgents.Map.PathFinder.FindPathAsync(map, start, dest, obstacles, radius);
         }
