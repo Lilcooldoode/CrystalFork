@@ -81,8 +81,15 @@ public class BaseAI
     private Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random, Point origin, int radius)
     {
         var nav = Client.NavData;
-        if (nav != null && nav.TryGetRandomCell(random, origin, radius, out var navPoint))
-            return navPoint;
+        if (nav != null)
+        {
+            int r = radius;
+            if (radius > 0 && random.Next(5) == 0)
+                r = 0; // occasionally roam anywhere using full nav data
+
+            if (nav.TryGetRandomCell(random, origin, r, out var navPoint))
+                return navPoint;
+        }
 
         var cells = map.WalkableCells;
         if (cells.Count > 0)
