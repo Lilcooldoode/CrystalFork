@@ -53,7 +53,7 @@ public sealed partial class GameClient
         return entry != null;
     }
 
-    public bool TryFindNearestRepairNpc(ItemType type, out uint id, out Point location, out NpcEntry? entry, bool includeUnknowns = true)
+    public bool TryFindNearestRepairNpc(ItemType type, out uint id, out Point location, out NpcEntry? entry, bool includeUnknowns = true, bool special = false)
     {
         id = 0;
         location = default;
@@ -67,10 +67,11 @@ public sealed partial class GameClient
         foreach (var e in _npcMemory.GetAll())
         {
             if (e.MapFile != map) continue;
-            bool knows = e.RepairItemTypes != null && e.RepairItemTypes.Contains(type);
-            bool unknown = e.CanRepair &&
-                (e.RepairItemTypes == null || !e.RepairItemTypes.Contains(type)) &&
-                (e.CannotRepairItemTypes == null || !e.CannotRepairItemTypes.Contains(type));
+            bool knows = special ? (e.SpecialRepairItemTypes != null && e.SpecialRepairItemTypes.Contains(type))
+                                 : (e.RepairItemTypes != null && e.RepairItemTypes.Contains(type));
+            bool unknown = (special ? e.CanSpecialRepair : e.CanRepair) &&
+                ((special ? e.SpecialRepairItemTypes : e.RepairItemTypes) == null || !(special ? e.SpecialRepairItemTypes : e.RepairItemTypes)!.Contains(type)) &&
+                ((special ? e.CannotSpecialRepairItemTypes : e.CannotRepairItemTypes) == null || !(special ? e.CannotSpecialRepairItemTypes : e.CannotRepairItemTypes)!.Contains(type));
             if (!knows && (!includeUnknowns || !unknown)) continue;
 
             int dist = Functions.MaxDistance(_currentLocation, new Point(e.X, e.Y));
@@ -154,7 +155,7 @@ public sealed partial class GameClient
         return entry != null;
     }
 
-    public bool TryFindNearestRepairNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes, bool includeUnknowns = true)
+    public bool TryFindNearestRepairNpc(IEnumerable<ItemType> types, out uint id, out Point location, out NpcEntry? entry, out List<ItemType> matchedTypes, bool includeUnknowns = true, bool special = false)
     {
         id = 0;
         location = default;
@@ -172,10 +173,11 @@ public sealed partial class GameClient
             var repairs = new List<ItemType>();
             foreach (var t in types)
             {
-                bool knows = e.RepairItemTypes != null && e.RepairItemTypes.Contains(t);
-                bool unknown = e.CanRepair &&
-                    (e.RepairItemTypes == null || !e.RepairItemTypes.Contains(t)) &&
-                    (e.CannotRepairItemTypes == null || !e.CannotRepairItemTypes.Contains(t));
+                bool knows = special ? (e.SpecialRepairItemTypes != null && e.SpecialRepairItemTypes.Contains(t))
+                                     : (e.RepairItemTypes != null && e.RepairItemTypes.Contains(t));
+                bool unknown = (special ? e.CanSpecialRepair : e.CanRepair) &&
+                    ((special ? e.SpecialRepairItemTypes : e.RepairItemTypes) == null || !(special ? e.SpecialRepairItemTypes : e.RepairItemTypes)!.Contains(t)) &&
+                    ((special ? e.CannotSpecialRepairItemTypes : e.CannotRepairItemTypes) == null || !(special ? e.CannotSpecialRepairItemTypes : e.CannotRepairItemTypes)!.Contains(t));
                 if (knows || (includeUnknowns && unknown))
                     repairs.Add(t);
             }
@@ -264,6 +266,7 @@ public sealed partial class GameClient
         var page = await interaction.BeginAsync();
         string[] repairKeys = { "@SREPAIR", "@REPAIR" };
         var repairKey = page.Buttons.Select(b => b.Key).FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
+        bool special = repairKey.Equals("@SREPAIR", StringComparison.OrdinalIgnoreCase);
         if (repairKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
             return;
         using (var cts = new CancellationTokenSource(2000))
@@ -278,7 +281,7 @@ public sealed partial class GameClient
             {
             }
         }
-        await RepairNeededItemsAsync(entry);
+        await RepairNeededItemsAsync(entry, special);
         try
         {
             using var cts = new CancellationTokenSource(200);

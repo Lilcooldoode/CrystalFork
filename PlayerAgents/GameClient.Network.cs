@@ -562,14 +562,23 @@ public sealed partial class GameClient
             case S.NPCSRepair:
                 if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npcRepairEntry))
                 {
+                    bool special = p is S.NPCSRepair;
+                    bool changed = false;
                     if (!npcRepairEntry.CanRepair)
                     {
                         npcRepairEntry.CanRepair = true;
-                        _npcMemory.SaveChanges();
+                        changed = true;
                     }
-                    if (HasUnknownRepairTypes(npcRepairEntry))
+                    if (special && !npcRepairEntry.CanSpecialRepair)
                     {
-                        FireAndForget(Task.Run(async () => { await HandleNpcRepairAsync(npcRepairEntry); _npcRepairTcs?.TrySetResult(true); _npcRepairTcs = null; }));
+                        npcRepairEntry.CanSpecialRepair = true;
+                        changed = true;
+                    }
+                    if (changed)
+                        _npcMemory.SaveChanges();
+                    if (HasUnknownRepairTypes(npcRepairEntry, special))
+                    {
+                        FireAndForget(Task.Run(async () => { await HandleNpcRepairAsync(npcRepairEntry, special); _npcRepairTcs?.TrySetResult(true); _npcRepairTcs = null; }));
                     }
                     else
                     {

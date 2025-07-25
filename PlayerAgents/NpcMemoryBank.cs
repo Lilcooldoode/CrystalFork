@@ -14,11 +14,14 @@ public sealed class NpcEntry
     public bool CanBuy { get; set; }
     public bool CanSell { get; set; }
     public bool CanRepair { get; set; }
+    public bool CanSpecialRepair { get; set; }
     public List<int>? BuyItemIndexes { get; set; }
     public List<ItemType>? SellItemTypes { get; set; }
     public List<ItemType>? CannotSellItemTypes { get; set; }
     public List<ItemType>? RepairItemTypes { get; set; }
     public List<ItemType>? CannotRepairItemTypes { get; set; }
+    public List<ItemType>? SpecialRepairItemTypes { get; set; }
+    public List<ItemType>? CannotSpecialRepairItemTypes { get; set; }
 }
 
 public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>

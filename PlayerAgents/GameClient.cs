@@ -764,12 +764,20 @@ public sealed partial class GameClient
         }
     }
 
-    private async Task DetermineRepairTypesAsync(NpcEntry entry)
+    private async Task DetermineRepairTypesAsync(NpcEntry entry, bool special = false)
     {
         if (_inventory == null && _equipment == null) return;
         var seen = new HashSet<ItemType>();
-        if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
-        if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
+        if (special)
+        {
+            if (entry.SpecialRepairItemTypes != null) seen.UnionWith(entry.SpecialRepairItemTypes);
+            if (entry.CannotSpecialRepairItemTypes != null) seen.UnionWith(entry.CannotSpecialRepairItemTypes);
+        }
+        else
+        {
+            if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
+            if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
+        }
 
         var items = new List<(UserItem item, EquipmentSlot? slot)>();
 
@@ -799,7 +807,7 @@ public sealed partial class GameClient
             if (seen.Contains(item.Info.Type)) continue;
             seen.Add(item.Info.Type);
             _pendingRepairChecks[item.UniqueID] = (entry, item.Info.Type);
-            Log($"I am repairing {item.Info.FriendlyName} at {entry.Name}");
+            Log($"I am {(special ? "special repairing" : "repairing")} {item.Info.FriendlyName} at {entry.Name}");
             using var cts = new CancellationTokenSource(2000);
             var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
@@ -810,24 +818,51 @@ public sealed partial class GameClient
                     await Task.Delay(200);
                 }
 
-                await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+                if (special)
+                    await SendAsync(new C.SRepairItem { UniqueID = item.UniqueID });
+                else
+                    await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
                 var success = await waitTask;
                 if (success)
                 {
-                    entry.RepairItemTypes ??= new List<ItemType>();
-                    if (!entry.RepairItemTypes.Contains(item.Info.Type))
+                    if (special)
                     {
-                        entry.RepairItemTypes.Add(item.Info.Type);
-                        _npcMemory.SaveChanges();
+                        entry.SpecialRepairItemTypes ??= new List<ItemType>();
+                        if (!entry.SpecialRepairItemTypes.Contains(item.Info.Type))
+                        {
+                            entry.SpecialRepairItemTypes.Add(item.Info.Type);
+                            _npcMemory.SaveChanges();
+                        }
+                    }
+                    else
+                    {
+                        entry.RepairItemTypes ??= new List<ItemType>();
+                        if (!entry.RepairItemTypes.Contains(item.Info.Type))
+                        {
+                            entry.RepairItemTypes.Add(item.Info.Type);
+                            _npcMemory.SaveChanges();
+                        }
                     }
                 }
                 else
                 {
-                    entry.CannotRepairItemTypes ??= new List<ItemType>();
-                    if (!entry.CannotRepairItemTypes.Contains(item.Info.Type))
+                    if (special)
                     {
-                        entry.CannotRepairItemTypes.Add(item.Info.Type);
-                        _npcMemory.SaveChanges();
+                        entry.CannotSpecialRepairItemTypes ??= new List<ItemType>();
+                        if (!entry.CannotSpecialRepairItemTypes.Contains(item.Info.Type))
+                        {
+                            entry.CannotSpecialRepairItemTypes.Add(item.Info.Type);
+                            _npcMemory.SaveChanges();
+                        }
+                    }
+                    else
+                    {
+                        entry.CannotRepairItemTypes ??= new List<ItemType>();
+                        if (!entry.CannotRepairItemTypes.Contains(item.Info.Type))
+                        {
+                            entry.CannotRepairItemTypes.Add(item.Info.Type);
+                            _npcMemory.SaveChanges();
+                        }
                     }
                 }
             }
@@ -846,10 +881,11 @@ public sealed partial class GameClient
         }
     }
 
-    private async Task RepairNeededItemsAsync(NpcEntry entry)
+    private async Task RepairNeededItemsAsync(NpcEntry entry, bool special = false)
     {
         if (_inventory == null || _equipment == null) return;
-        if (entry.RepairItemTypes == null || entry.RepairItemTypes.Count == 0) return;
+        var repairList = special ? entry.SpecialRepairItemTypes : entry.RepairItemTypes;
+        if (repairList == null || repairList.Count == 0) return;
 
         var items = new List<(UserItem item, EquipmentSlot? slot)>();
 
@@ -858,7 +894,7 @@ public sealed partial class GameClient
             var item = _equipment[i];
             if (item?.Info == null) continue;
             if (item.CurrentDura == item.MaxDura) continue;
-            if (!entry.RepairItemTypes.Contains(item.Info.Type)) continue;
+            if (!repairList.Contains(item.Info.Type)) continue;
             items.Add((item, (EquipmentSlot)i));
         }
 
@@ -870,12 +906,15 @@ public sealed partial class GameClient
                 await Task.Delay(200);
             }
 
-            Log($"I am repairing {item.Info?.FriendlyName ?? "item"} at {entry.Name}");
+            Log($"I am {(special ? "special repairing" : "repairing")} {item.Info?.FriendlyName ?? "item"} at {entry.Name}");
             using var cts = new CancellationTokenSource(2000);
             var waitTask = WaitForRepairItemAsync(item.UniqueID, cts.Token);
             try
             {
-                await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
+                if (special)
+                    await SendAsync(new C.SRepairItem { UniqueID = item.UniqueID });
+                else
+                    await SendAsync(new C.RepairItem { UniqueID = item.UniqueID });
                 await waitTask;
             }
             catch (OperationCanceledException)
@@ -906,12 +945,20 @@ public sealed partial class GameClient
         return false;
     }
 
-    private bool HasUnknownRepairTypes(NpcEntry entry)
+    private bool HasUnknownRepairTypes(NpcEntry entry, bool special = false)
     {
         if (_inventory == null && _equipment == null) return false;
         var seen = new HashSet<ItemType>();
-        if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
-        if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
+        if (special)
+        {
+            if (entry.SpecialRepairItemTypes != null) seen.UnionWith(entry.SpecialRepairItemTypes);
+            if (entry.CannotSpecialRepairItemTypes != null) seen.UnionWith(entry.CannotSpecialRepairItemTypes);
+        }
+        else
+        {
+            if (entry.RepairItemTypes != null) seen.UnionWith(entry.RepairItemTypes);
+            if (entry.CannotRepairItemTypes != null) seen.UnionWith(entry.CannotRepairItemTypes);
+        }
 
         IEnumerable<UserItem?> items = _inventory ?? Array.Empty<UserItem?>();
         if (_equipment != null)
@@ -935,9 +982,9 @@ public sealed partial class GameClient
         ProcessNpcActionQueue();
     }
 
-    private async Task HandleNpcRepairAsync(NpcEntry entry)
+    private async Task HandleNpcRepairAsync(NpcEntry entry, bool special = false)
     {
-        await DetermineRepairTypesAsync(entry);
+        await DetermineRepairTypesAsync(entry, special);
         _npcRepairTcs?.TrySetResult(true);
         _npcRepairTcs = null;
         ProcessNpcActionQueue();
@@ -1131,7 +1178,8 @@ public sealed partial class GameClient
             await waitTask;
             if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
             {
-                await RepairNeededItemsAsync(entry);
+                bool special = key.Equals("@SREPAIR", StringComparison.OrdinalIgnoreCase);
+                await RepairNeededItemsAsync(entry, special);
             }
         }
         catch (OperationCanceledException)
@@ -1209,11 +1257,17 @@ public sealed partial class GameClient
                 entry.CanRepair = true;
                 changed = true;
             }
-            needRepairCheck = HasUnknownRepairTypes(entry);
+            string[] repairKeys = { "@SREPAIR", "@REPAIR" };
+            repairKey = keyList.FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
+            bool specialRepair = repairKey.Equals("@SREPAIR", StringComparison.OrdinalIgnoreCase);
+            if (specialRepair && !entry.CanSpecialRepair)
+            {
+                entry.CanSpecialRepair = true;
+                changed = true;
+            }
+            needRepairCheck = HasUnknownRepairTypes(entry, specialRepair);
             if (needRepairCheck)
             {
-                string[] repairKeys = { "@SREPAIR", "@REPAIR" };
-                repairKey = keyList.FirstOrDefault(k => repairKeys.Contains(k.ToUpper())) ?? "@REPAIR";
                 if (repairKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
                 {
                     _skipNextGoods = true;
