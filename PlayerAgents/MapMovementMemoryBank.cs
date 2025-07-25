@@ -61,4 +61,19 @@ public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
         if (added)
             Save();
     }
+
+    public IReadOnlyList<string> GetKnownMaps()
+    {
+        lock (_lock)
+        {
+            ReloadIfUpdated();
+            var set = new HashSet<string>();
+            foreach (var e in _entries)
+            {
+                set.Add(e.SourceMap);
+                set.Add(e.DestinationMap);
+            }
+            return set.ToList();
+        }
+    }
 }

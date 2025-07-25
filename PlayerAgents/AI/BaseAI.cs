@@ -467,7 +467,7 @@ public class BaseAI
         if (DateTime.UtcNow >= _nextBestMapCheck)
         {
             _nextBestMapCheck = DateTime.UtcNow + TimeSpan.FromHours(1);
-            if (Random.Next(10) == 0)
+            if (Random.Next(5) == 0)
             {
                 var explore = Client.GetRandomExplorationMap();
                 if (!string.IsNullOrEmpty(explore))

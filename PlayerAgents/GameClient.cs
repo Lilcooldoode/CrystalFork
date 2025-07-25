@@ -464,7 +464,13 @@ public sealed partial class GameClient
     public string? GetBestMapForLevel()
     {
         if (_playerClass == null) return null;
-        return _expRateMemory.GetBestMapFile(_playerClass.Value, _level);
+        var best = _expRateMemory.GetBestMapFile(_playerClass.Value, _level);
+        if (!string.IsNullOrEmpty(best))
+            return best;
+
+        var maps = _movementMemory.GetKnownMaps();
+        if (maps.Count == 0) return null;
+        return maps[_random.Next(maps.Count)];
     }
 
     public string? GetRandomExplorationMap()
@@ -472,7 +478,10 @@ public sealed partial class GameClient
         if (_playerClass == null) return null;
 
         var entries = _expRateMemory.GetAll();
-        var allMaps = entries.Select(e => e.MapFile).Distinct().ToList();
+        var allMaps = new HashSet<string>(entries.Select(e => e.MapFile));
+        foreach (var m in _movementMemory.GetKnownMaps())
+            allMaps.Add(m);
+
         var known = new HashSet<string>(entries
             .Where(e => e.Class == _playerClass.Value && e.Level == _level)
             .Select(e => e.MapFile));
