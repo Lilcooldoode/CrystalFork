@@ -3,4 +3,5 @@
   "ServerPort": 7000,
   "PlayerCount": 1,
   "ConcurrentLogins": 50
+  ,"AutoScale": true
 }

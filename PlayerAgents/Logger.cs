@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Drawing;
 using System.IO;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Linq;
 
 public sealed class AgentStatus
 {
@@ -53,6 +56,7 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
     private readonly List<string> _order = new();
     private readonly object _lockObj = new();
     private readonly Timer _timer;
+    private readonly CpuMonitor _cpu = new();
     private int _lastLineCount;
 
     public SummaryAgentLogger()
@@ -64,6 +68,8 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
                 Render();
             }
         }, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+
+        // CPU monitor initialized above
     }
 
     public void Dispose() => _timer.Dispose();
@@ -137,6 +143,12 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
         }
         catch { }
 
+
+        var cpuUsage = _cpu.GetCpuUsage();
+        Console.Title = $"Agents: {_order.Count} CPU: {cpuUsage:0.0}%";
+
         _lastLineCount = lines.Count;
     }
+
+    // CPU usage handled by CpuMonitor
 }

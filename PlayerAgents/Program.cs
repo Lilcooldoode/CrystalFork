@@ -22,6 +22,7 @@ public sealed class Config
 
     public int PlayerCount { get; set; }
     public int ConcurrentLogins { get; set; } = 50;
+    public bool AutoScale { get; set; } = true;
 
     // Single agent fields for backwards compatibility
     public string AccountID { get; set; } = string.Empty;
@@ -199,12 +200,14 @@ internal class Program
             }
 
             var semaphore = new SemaphoreSlim(config.ConcurrentLogins > 0 ? config.ConcurrentLogins : 50);
-            var tasks = new List<Task>();
-            foreach (var agent in agentConfigs)
+            var clientLock = new object();
+            var runningClients = new List<GameClient>();
+            int nextIndex = agentConfigs.Count;
+
+            async Task StartAgentAsync(AgentConfig agent)
             {
                 await semaphore.WaitAsync();
-
-                var agentConfig = new Config
+                var agentCfg = new Config
                 {
                     ServerIP = config.ServerIP,
                     ServerPort = config.ServerPort,
@@ -213,23 +216,84 @@ internal class Program
                     CharacterName = agent.CharacterName
                 };
 
-                tasks.Add(Task.Run(async () =>
+                var client = new GameClient(agentCfg, npcMemory, movementMemory, expRateMemory, navManager, logger);
+                lock (clientLock) runningClients.Add(client);
+
+                _ = Task.Run(async () =>
                 {
                     try
                     {
-                        await RunAgentAsync(agentConfig, npcMemory, movementMemory, expRateMemory, navManager, logger, semaphore);
+                        await RunAgentAsync(client, semaphore);
                     }
-                    catch
+                    finally
                     {
-                        semaphore.Release();
-                        throw;
+                        lock (clientLock) runningClients.Remove(client);
                     }
-                }));
+                });
             }
 
-            await Task.WhenAll(tasks);
-            if (logger is IDisposable d)
-                d.Dispose();
+            foreach (var agent in agentConfigs)
+                await StartAgentAsync(agent);
+
+            if (config.AutoScale)
+            {
+                _ = Task.Run(async () =>
+                {
+                    var cpu = new CpuMonitor();
+                    int low = 0;
+                    int high = 0;
+                    while (true)
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(5));
+                        var usage = cpu.GetCpuUsage();
+
+                        if (usage < 50)
+                        {
+                            low += 5;
+                            high = 0;
+                        }
+                        else if (usage > 60)
+                        {
+                            high += 5;
+                            low = 0;
+                        }
+                        else
+                        {
+                            low = high = 0;
+                        }
+
+                        if (low >= 30)
+                        {
+                            low = 0;
+                            for (int i = 0; i < 50; i++)
+                            {
+                                var idx = Interlocked.Increment(ref nextIndex);
+                                var ac = new AgentConfig
+                                {
+                                    AccountID = $"acc{idx:D3}",
+                                    Password = $"pass{idx:D3}",
+                                    CharacterName = $"hero{idx}"
+                                };
+                                logger.RegisterAgent(ac.CharacterName);
+                                await StartAgentAsync(ac);
+                            }
+                        }
+
+                        if (high >= 5)
+                        {
+                            high = 0;
+                            List<GameClient> toDrop;
+                            lock (clientLock)
+                                toDrop = runningClients.TakeLast(50).ToList();
+
+                            foreach (var c in toDrop)
+                                await c.DisconnectAsync();
+                        }
+                    }
+                });
+            }
+
+            await Task.Delay(-1);
         }
         catch (Exception ex)
         {
@@ -239,15 +303,9 @@ internal class Program
     }
 
     private static async Task RunAgentAsync(
-        Config config,
-        NpcMemoryBank npcMemory,
-        MapMovementMemoryBank movementMemory,
-        MapExpRateMemoryBank expRateMemory,
-        NavDataManager navManager,
-        IAgentLogger logger,
+        GameClient client,
         SemaphoreSlim? loginLimiter = null)
     {
-        var client = new GameClient(config, npcMemory, movementMemory, expRateMemory, navManager, logger);
         client.UpdateAction("connecting");
         await client.ConnectAsync();
         await client.LoginAsync();
