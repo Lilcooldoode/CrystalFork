@@ -271,6 +271,18 @@ public sealed partial class GameClient
                     _navData?.Remove(_currentLocation);
                 }
                 break;
+            case S.Pushed push:
+                _currentLocation = push.Location;
+                _pendingMoveTarget = null;
+                break;
+            case S.ObjectPushed opu:
+                UpdateTrackedObject(opu.ObjectID, opu.Location, opu.Direction);
+                if (opu.ObjectID == _objectId)
+                {
+                    _currentLocation = opu.Location;
+                    _pendingMoveTarget = null;
+                }
+                break;
             case S.Struck st:
                 _lastStruckAttacker = st.AttackerID;
                 break;
