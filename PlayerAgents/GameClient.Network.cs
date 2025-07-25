@@ -211,12 +211,20 @@ public sealed partial class GameClient
                     var entry = _npcMemory.AddNpc(on.Name, mapId, on.Location);
                     _npcEntries[on.ObjectID] = entry;
 
-                    if (!IgnoreNpcInteractions)
+                    foreach (var kv in _recentNpcInteractions.ToList())
+                        if (DateTime.UtcNow - kv.Value >= TimeSpan.FromSeconds(10))
+                            _recentNpcInteractions.Remove(kv.Key);
+
+                    var key = (entry.Name, entry.MapFile, entry.X, entry.Y);
+                    if (!_recentNpcInteractions.TryGetValue(key, out var last) || DateTime.UtcNow - last >= TimeSpan.FromSeconds(10))
                     {
-                        if (!_npcQueue.Contains(on.ObjectID))
-                            _npcQueue.Enqueue(on.ObjectID);
-                        if (!_dialogNpcId.HasValue)
-                            ProcessNextNpcInQueue();
+                        if (!IgnoreNpcInteractions)
+                        {
+                            if (!_npcQueue.Contains(on.ObjectID))
+                                _npcQueue.Enqueue(on.ObjectID);
+                            if (!_dialogNpcId.HasValue)
+                                ProcessNextNpcInQueue();
+                        }
                     }
                 }
                 break;

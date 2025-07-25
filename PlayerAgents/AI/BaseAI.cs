@@ -58,6 +58,10 @@ public class BaseAI
     private DateTime _travelPauseUntil = DateTime.MinValue;
     private List<MapMovementEntry>? _travelPath;
     private int _travelIndex;
+    private DateTime _stationarySince = DateTime.MinValue;
+    private Point _lastStationaryLocation = Point.Empty;
+    private DateTime _travelStuckSince = DateTime.MinValue;
+    private DateTime _lastMoveOrAttackTime = DateTime.MinValue;
     
     private readonly Dictionary<(Point Location, string Name), DateTime> _itemRetryTimes = new();
     private readonly Dictionary<uint, DateTime> _monsterIgnoreTimes = new();
@@ -80,15 +84,22 @@ public class BaseAI
 
     private Point GetRandomPoint(PlayerAgents.Map.MapData map, Random random, Point origin, int radius)
     {
+        var obstacles = BuildObstacles();
         var nav = Client.NavData;
+        const int attempts = 20;
         if (nav != null)
         {
             int r = radius;
             if (radius > 0 && random.Next(5) == 0)
                 r = 0; // occasionally roam anywhere using full nav data
 
-            if (nav.TryGetRandomCell(random, origin, r, out var navPoint))
-                return navPoint;
+            for (int i = 0; i < attempts; i++)
+            {
+                if (!nav.TryGetRandomCell(random, origin, r, out var navPoint))
+                    break;
+                if (!obstacles.Contains(navPoint))
+                    return navPoint;
+            }
         }
 
         var cells = map.WalkableCells;
@@ -96,19 +107,32 @@ public class BaseAI
         {
             if (radius > 0)
             {
-                var subset = cells.Where(c => Functions.MaxDistance(c, origin) <= radius).ToList();
+                var subset = cells.Where(c => Functions.MaxDistance(c, origin) <= radius && !obstacles.Contains(c)).ToList();
                 if (subset.Count > 0)
                     return subset[random.Next(subset.Count)];
             }
-            return cells[random.Next(cells.Count)];
+            var free = cells.Where(c => !obstacles.Contains(c)).ToList();
+            if (free.Count > 0)
+                return free[random.Next(free.Count)];
         }
 
         // Fallback for maps without walk data
         int width = Math.Max(map.Width, 1);
         int height = Math.Max(map.Height, 1);
-        int x = Math.Clamp(origin.X + random.Next(-10, 11), 0, width - 1);
-        int y = Math.Clamp(origin.Y + random.Next(-10, 11), 0, height - 1);
-        return new Point(x, y);
+        for (int i = 0; i < attempts; i++)
+        {
+            int x = Math.Clamp(origin.X + random.Next(-10, 11), 0, width - 1);
+            int y = Math.Clamp(origin.Y + random.Next(-10, 11), 0, height - 1);
+            if (map.IsWalkable(x, y))
+            {
+                var p = new Point(x, y);
+                if (!obstacles.Contains(p))
+                    return p;
+            }
+        }
+        int fx = Math.Clamp(origin.X + random.Next(-10, 11), 0, width - 1);
+        int fy = Math.Clamp(origin.Y + random.Next(-10, 11), 0, height - 1);
+        return new Point(fx, fy);
     }
 
     private UserItem? GetBestItemForSlot(EquipmentSlot slot, IEnumerable<UserItem?> inventory, UserItem? current)
@@ -342,6 +366,7 @@ public class BaseAI
             if (Functions.PointMove(current, dir, 2) == path[2] && Client.CanRun(dir))
             {
                 await Client.RunAsync(dir);
+                _lastMoveOrAttackTime = DateTime.UtcNow;
                 path.RemoveRange(0, 2);
                 return true;
             }
@@ -353,6 +378,7 @@ public class BaseAI
             if (Client.CanWalk(dir))
             {
                 await Client.WalkAsync(dir);
+                _lastMoveOrAttackTime = DateTime.UtcNow;
                 path.RemoveAt(0);
                 return true;
             }
@@ -363,6 +389,7 @@ public class BaseAI
             if (Client.CanWalk(dir))
             {
                 await Client.WalkAsync(dir);
+                _lastMoveOrAttackTime = DateTime.UtcNow;
                 return true;
             }
         }
@@ -384,7 +411,9 @@ public class BaseAI
             return Task.FromResult(true);
         }
 
-        var entries = Client.MovementMemory.GetAll();
+        var entries = Client.MovementMemory.GetAll()
+            .Where(e => e.SourceMap != e.DestinationMap)
+            .ToList();
         var queue = new Queue<(string Map, List<MapMovementEntry> Path)>();
         var visited = new HashSet<string> { startMap };
         queue.Enqueue((startMap, new List<MapMovementEntry>()));
@@ -768,6 +797,9 @@ public class BaseAI
     {
         Point current;
         _nextBestMapCheck = DateTime.UtcNow;
+        _lastStationaryLocation = Client.CurrentLocation;
+        _stationarySince = DateTime.UtcNow;
+        _lastMoveOrAttackTime = DateTime.UtcNow;
         while (true)
         {
             if (await HandleReviveAsync())
@@ -920,6 +952,7 @@ public class BaseAI
                     {
                         var dir = Functions.DirectionFromPoint(current, closest.Location);
                         await Client.AttackAsync(dir);
+                        _lastMoveOrAttackTime = DateTime.UtcNow;
                         _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
                     }
                 }
@@ -1045,6 +1078,24 @@ public class BaseAI
                         }
                     }
                 }
+                if (traveling && _searchDestination.HasValue)
+                {
+                    if (Client.CurrentLocation == _searchDestination.Value)
+                    {
+                        if (_travelStuckSince == DateTime.MinValue)
+                            _travelStuckSince = DateTime.UtcNow;
+                        else if (DateTime.UtcNow - _travelStuckSince > TimeSpan.FromSeconds(5))
+                        {
+                            var dir = (MirDirection)Random.Next(8);
+                            await Client.TurnAsync(dir);
+                            _travelStuckSince = DateTime.UtcNow;
+                        }
+                    }
+                    else
+                    {
+                        _travelStuckSince = DateTime.MinValue;
+                    }
+                }
             }
 
             if (_sellingItems)
@@ -1066,6 +1117,33 @@ public class BaseAI
             else
             {
                 Client.UpdateAction("roaming...");
+            }
+
+            if (Client.CurrentLocation != _lastStationaryLocation)
+            {
+                _lastStationaryLocation = Client.CurrentLocation;
+                _stationarySince = DateTime.UtcNow;
+            }
+            else if (_stationarySince != DateTime.MinValue &&
+                     DateTime.UtcNow - _stationarySince > TimeSpan.FromSeconds(5))
+            {
+                var dir = (MirDirection)Random.Next(8);
+                await Client.TurnAsync(dir);
+                _stationarySince = DateTime.UtcNow;
+            }
+
+            if (DateTime.UtcNow - _lastMoveOrAttackTime > TimeSpan.FromSeconds(60) &&
+                DateTime.UtcNow >= _nextTownTeleportTime)
+            {
+                var teleport = Client.FindTownTeleport();
+                if (teleport != null)
+                {
+                    await Client.UseItemAsync(teleport);
+                    string name = teleport.Info?.FriendlyName ?? "town teleport";
+                    Client.Log($"Used {name} due to inactivity");
+                    _nextTownTeleportTime = DateTime.UtcNow + TimeSpan.FromMinutes(1);
+                    _lastMoveOrAttackTime = DateTime.UtcNow;
+                }
             }
 
             await Task.Delay(WalkDelay);
@@ -1099,6 +1177,7 @@ public class BaseAI
             {
                 var dir = Functions.DirectionFromPoint(current, target.Location);
                 await Client.AttackAsync(dir);
+                _lastMoveOrAttackTime = DateTime.UtcNow;
                 _nextAttackTime = DateTime.UtcNow + TimeSpan.FromMilliseconds(AttackDelay);
             }
         }

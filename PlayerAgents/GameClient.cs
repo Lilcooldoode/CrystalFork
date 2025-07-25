@@ -144,6 +144,7 @@ public sealed partial class GameClient
     private readonly Dictionary<ulong, TaskCompletionSource<S.SellItem>> _sellItemTcs = new();
     private readonly Dictionary<ulong, TaskCompletionSource<bool>> _repairItemTcs = new();
     private const int NpcResponseDebounceMs = 100;
+    private readonly Dictionary<(string name, string map, int x, int y), DateTime> _recentNpcInteractions = new();
 
     private List<UserItem>? _lastNpcGoods;
     private PanelType _lastNpcGoodsType;
@@ -1075,6 +1076,7 @@ public sealed partial class GameClient
         _npcInteractionStart = DateTime.UtcNow;
         _npcActionTasks.Clear();
         _processingNpcAction = false;
+        _recentNpcInteractions[(entry.Name, entry.MapFile, entry.X, entry.Y)] = DateTime.UtcNow;
         Log($"I am speaking with NPC {entry.Name}");
         _npcInteraction = new NPCInteraction(this, id);
         var page = await _npcInteraction.BeginAsync();

@@ -72,6 +72,12 @@ public sealed partial class GameClient
         await SendAsync(attack);
     }
 
+    public async Task TurnAsync(MirDirection direction)
+    {
+        if (_stream == null) return;
+        await SendAsync(new C.Turn { Direction = direction });
+    }
+
     public async Task TownReviveAsync()
     {
         if (_stream == null) return;
