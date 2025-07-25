@@ -20,7 +20,7 @@ public sealed partial class GameClient
     private readonly MapExpRateMemoryBank _expRateMemory;
     private readonly NavDataManager _navDataManager;
     private readonly IAgentLogger? _logger;
-    private bool _suppressNextMovement;
+    private CancellationTokenSource? _movementSaveCts;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private long _pingTime;

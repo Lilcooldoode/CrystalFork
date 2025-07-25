@@ -118,19 +118,18 @@ public sealed partial class GameClient
             case S.ObjectTeleportOut oto:
                 if (oto.ObjectID == _objectId)
                 {
-                    _suppressNextMovement = true;
                     _pendingMoveTarget = null;
                 }
                 break;
             case S.ObjectTeleportIn oti:
                 if (oti.ObjectID == _objectId)
                 {
-                    _suppressNextMovement = true;
+                    _movementSaveCts?.Cancel();
+                    _movementSaveCts = null;
                     _pendingMoveTarget = null;
                 }
                 break;
             case S.TeleportIn:
-                _suppressNextMovement = true;
                 _pendingMoveTarget = null;
                 break;
             case S.MapInformation mi:
@@ -141,14 +140,28 @@ public sealed partial class GameClient
                 ReportStatus();
                 break;
             case S.MapChanged mc:
-                if (!string.IsNullOrEmpty(_currentMapFile) && !_suppressNextMovement && !_dead)
+                if (!string.IsNullOrEmpty(_currentMapFile) && !_dead)
                 {
                     var srcLoc = _pendingMoveTarget ?? _currentLocation;
-                    _movementMemory.AddMovement(_currentMapFile, srcLoc, mc.FileName, mc.Location);
+                    var srcFile = _currentMapFile;
+                    var destFile = mc.FileName;
+                    var destLoc = mc.Location;
+                    _movementSaveCts?.Cancel();
+                    var cts = new CancellationTokenSource();
+                    _movementSaveCts = cts;
+                    FireAndForget(Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                            if (!cts.IsCancellationRequested)
+                                _movementMemory.AddMovement(srcFile, srcLoc, destFile, destLoc);
+                        }
+                        catch (TaskCanceledException) { }
+                    }));
                 }
                 _pendingMoveTarget = null;
                 FinalizeMapExpRate();
-                _suppressNextMovement = false;
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentMapName = mc.Title;
                 _currentLocation = mc.Location;
@@ -342,9 +355,11 @@ public sealed partial class GameClient
                     _lastAttackTarget = null;
                 break;
             case S.Revived:
+                _movementSaveCts?.Cancel();
+                _movementSaveCts = null;
                 if (_dead)
                 {
-                Log("I have been revived.");
+                    Log("I have been revived.");
                 }
                 _dead = false;
                 _hp = GetMaxHP();
