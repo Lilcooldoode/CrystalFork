@@ -161,12 +161,12 @@ public sealed partial class GameClient
                         catch (TaskCanceledException) { }
                         finally
                         {
+                            _pendingMoveTarget = null;
                             if (ReferenceEquals(_movementSaveCts, cts))
                                 _movementSaveCts = null;
                         }
                     }));
                 }
-                _pendingMoveTarget = null;
                 FinalizeMapExpRate();
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentMapName = mc.Title;
