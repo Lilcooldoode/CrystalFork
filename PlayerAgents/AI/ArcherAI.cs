@@ -8,6 +8,7 @@ public sealed class ArcherAI : BaseAI
     {
         new DesiredItem(ItemType.Potion, hpPotion: true, weightFraction: 0.10),
         new DesiredItem(ItemType.Potion, hpPotion: false, weightFraction: 0.50),
+        new DesiredItem(ItemType.Torch, count: 1),
         new DesiredItem(ItemType.Scroll, shape: 1, count: 1)
     };
 
