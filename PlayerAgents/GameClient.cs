@@ -60,6 +60,8 @@ public sealed partial class GameClient
     private uint _gold;
 
     private int _maxBagWeight;
+    private int _maxWearWeight;
+    private int _maxHandWeight;
     private int _maxHP;
     private int _maxMP;
     private bool _statsDirty = true;
@@ -509,7 +511,11 @@ public sealed partial class GameClient
         _baseStats ??= new BaseStats(_playerClass.Value);
 
         int baseWeight = _baseStats.Stats.First(s => s.Type == Stat.BagWeight).Calculate(_playerClass.Value, _level);
+        int baseWearWeight = _baseStats.Stats.First(s => s.Type == Stat.WearWeight).Calculate(_playerClass.Value, _level);
+        int baseHandWeight = _baseStats.Stats.First(s => s.Type == Stat.HandWeight).Calculate(_playerClass.Value, _level);
         int extraWeight = 0;
+        int extraWearWeight = 0;
+        int extraHandWeight = 0;
         int baseHP = _baseStats.Stats.First(s => s.Type == Stat.HP).Calculate(_playerClass.Value, _level);
        int extraHP = 0;
         int hpPercent = 0;
@@ -525,6 +531,11 @@ public sealed partial class GameClient
                 extraWeight += item.Info.Stats[Stat.BagWeight];
                 extraWeight += item.AddedStats[Stat.BagWeight];
 
+                extraWearWeight += item.Info.Stats[Stat.WearWeight];
+                extraWearWeight += item.AddedStats[Stat.WearWeight];
+                extraHandWeight += item.Info.Stats[Stat.HandWeight];
+                extraHandWeight += item.AddedStats[Stat.HandWeight];
+
                 extraHP += item.Info.Stats[Stat.HP];
                 extraHP += item.AddedStats[Stat.HP];
                 hpPercent += item.Info.Stats[Stat.HPRatePercent];
@@ -538,6 +549,8 @@ public sealed partial class GameClient
         }
 
         _maxBagWeight = baseWeight + extraWeight;
+        _maxWearWeight = baseWearWeight + extraWearWeight;
+        _maxHandWeight = baseHandWeight + extraHandWeight;
 
         _maxHP = baseHP + extraHP;
         if (hpPercent != 0)
@@ -562,10 +575,52 @@ public sealed partial class GameClient
         return weight;
     }
 
+    public int GetCurrentWearWeight()
+    {
+        int weight = 0;
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item?.Info == null) continue;
+                if (item.Info.Type == ItemType.Weapon || item.Info.Type == ItemType.Torch) continue;
+                weight += item.Weight;
+            }
+        }
+        return weight;
+    }
+
+    public int GetCurrentHandWeight()
+    {
+        int weight = 0;
+        if (_equipment != null)
+        {
+            foreach (var item in _equipment)
+            {
+                if (item?.Info == null) continue;
+                if (item.Info.Type == ItemType.Weapon || item.Info.Type == ItemType.Torch)
+                    weight += item.Weight;
+            }
+        }
+        return weight;
+    }
+
     public int GetMaxBagWeight()
     {
         if (_statsDirty) RecalculateStats();
         return _maxBagWeight;
+    }
+
+    public int GetMaxWearWeight()
+    {
+        if (_statsDirty) RecalculateStats();
+        return _maxWearWeight;
+    }
+
+    public int GetMaxHandWeight()
+    {
+        if (_statsDirty) RecalculateStats();
+        return _maxHandWeight;
     }
 
     public int GetMaxHP()

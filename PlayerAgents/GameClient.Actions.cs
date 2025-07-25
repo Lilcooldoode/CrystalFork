@@ -166,6 +166,27 @@ public sealed partial class GameClient
                 break;
         }
 
+        if (_equipment != null)
+        {
+            var current = _equipment.Length > (int)slot ? _equipment[(int)slot] : null;
+            if (item.Info.Type == ItemType.Weapon || item.Info.Type == ItemType.Torch)
+            {
+                int weight = GetCurrentHandWeight();
+                if (current?.Info != null)
+                    weight -= current.Weight;
+                if (weight + item.Weight > GetMaxHandWeight())
+                    return false;
+            }
+            else
+            {
+                int weight = GetCurrentWearWeight();
+                if (current?.Info != null)
+                    weight -= current.Weight;
+                if (weight + item.Weight > GetMaxWearWeight())
+                    return false;
+            }
+        }
+
         return true;
     }
 
