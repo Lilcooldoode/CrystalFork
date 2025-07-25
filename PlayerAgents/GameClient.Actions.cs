@@ -7,6 +7,7 @@ public sealed partial class GameClient
     public async Task WalkAsync(MirDirection direction)
     {
         if (_stream == null) return;
+        if (_movementSaveCts != null) return;
         var target = Functions.PointMove(_currentLocation, direction, 1);
         await TryOpenDoorAsync(target);
         Log($"I am walking to {target.X}, {target.Y}");
@@ -20,6 +21,7 @@ public sealed partial class GameClient
     public async Task RunAsync(MirDirection direction)
     {
         if (_stream == null) return;
+        if (_movementSaveCts != null) return;
         var first = Functions.PointMove(_currentLocation, direction, 1);
         var target = Functions.PointMove(_currentLocation, direction, 2);
         await TryOpenDoorAsync(first);
@@ -75,6 +77,8 @@ public sealed partial class GameClient
     public async Task TurnAsync(MirDirection direction)
     {
         if (_stream == null) return;
+        if (_movementSaveCts != null) return;
+        _pendingMoveTarget = _currentLocation;
         await SendAsync(new C.Turn { Direction = direction });
     }
 

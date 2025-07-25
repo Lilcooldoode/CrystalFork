@@ -356,6 +356,7 @@ public class BaseAI
     private async Task<bool> MoveAlongPathAsync(List<Point> path, Point destination)
     {
         if (path.Count <= 1) return true;
+        if (Client.MovementSavePending) return false;
 
         var current = Client.CurrentLocation;
 
@@ -807,6 +808,12 @@ public class BaseAI
 
             if (await HandleHarvestingAsync())
                 continue;
+
+            if (Client.MovementSavePending)
+            {
+                await Task.Delay(WalkDelay);
+                continue;
+            }
 
             Client.ProcessMapExpRateInterval();
             await ProcessBestMapAsync();

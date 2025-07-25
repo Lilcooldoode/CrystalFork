@@ -118,7 +118,8 @@ public sealed partial class GameClient
             case S.ObjectTeleportOut oto:
                 if (oto.ObjectID == _objectId)
                 {
-                    _pendingMoveTarget = null;
+                    // keep pending move target so MapChanged can record the
+                    // transition source correctly
                 }
                 break;
             case S.ObjectTeleportIn oti:
@@ -126,11 +127,11 @@ public sealed partial class GameClient
                 {
                     _movementSaveCts?.Cancel();
                     _movementSaveCts = null;
-                    _pendingMoveTarget = null;
                 }
                 break;
             case S.TeleportIn:
-                _pendingMoveTarget = null;
+                // do not clear pending move target here so any upcoming MapChanged
+                // event will use the intended move location
                 break;
             case S.MapInformation mi:
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mi.FileName + ".map");
@@ -140,9 +141,9 @@ public sealed partial class GameClient
                 ReportStatus();
                 break;
             case S.MapChanged mc:
-                if (!string.IsNullOrEmpty(_currentMapFile) && !_dead)
+                if (!string.IsNullOrEmpty(_currentMapFile) && !_dead && _pendingMoveTarget.HasValue)
                 {
-                    var srcLoc = _pendingMoveTarget ?? _currentLocation;
+                    var srcLoc = _pendingMoveTarget.Value;
                     var srcFile = _currentMapFile;
                     var destFile = mc.FileName;
                     var destLoc = mc.Location;
@@ -158,6 +159,11 @@ public sealed partial class GameClient
                                 _movementMemory.AddMovement(srcFile, srcLoc, destFile, destLoc);
                         }
                         catch (TaskCanceledException) { }
+                        finally
+                        {
+                            if (ReferenceEquals(_movementSaveCts, cts))
+                                _movementSaveCts = null;
+                        }
                     }));
                 }
                 _pendingMoveTarget = null;
@@ -202,6 +208,12 @@ public sealed partial class GameClient
                     // movement request denied, revert to walking
                     _canRun = false;
                 }
+                if (_pendingMoveTarget.HasValue && loc.Location != _pendingMoveTarget.Value)
+                {
+                    _movementSaveCts?.Cancel();
+                    _movementSaveCts = null;
+                    _pendingMoveTarget = null;
+                }
                 _currentLocation = loc.Location;
                 _navData?.Remove(_currentLocation);
                 ReportStatus();
@@ -235,7 +247,7 @@ public sealed partial class GameClient
                         {
                             if (!_npcQueue.Contains(on.ObjectID))
                                 _npcQueue.Enqueue(on.ObjectID);
-                            if (!_dialogNpcId.HasValue)
+                            if (!_dialogNpcId.HasValue && _movementSaveCts == null)
                                 ProcessNextNpcInQueue();
                         }
                     }

@@ -163,6 +163,7 @@ public sealed partial class GameClient
     private DateTime _nextHarvestTime = DateTime.MinValue;
 
     public bool IsHarvesting => _awaitingHarvest;
+    public bool MovementSavePending => _movementSaveCts != null;
     public bool IgnoreNpcInteractions { get; set; }
 
     private static void Bind(UserItem item)
@@ -1042,7 +1043,7 @@ public sealed partial class GameClient
 
     private void ProcessNextNpcInQueue()
     {
-        if (IgnoreNpcInteractions) return;
+        if (IgnoreNpcInteractions || _movementSaveCts != null) return;
         while (_npcQueue.Count > 0)
         {
             var id = _npcQueue.Dequeue();
