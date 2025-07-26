@@ -1122,7 +1122,7 @@ public sealed partial class GameClient
     {
         if (!entry.CheckedMerchantKeys)
             return true;
-        if (entry.CanBuy && entry.BuyItemIndexes == null)
+        if (entry.CanBuy)
             return true;
         if (entry.CanSell && HasUnknownSellTypes(entry))
             return true;
