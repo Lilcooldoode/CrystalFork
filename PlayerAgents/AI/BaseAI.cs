@@ -55,6 +55,7 @@ public class BaseAI
     protected virtual int WalkDelay => 600;
     protected virtual int AttackDelay => 1400;
     protected virtual TimeSpan RoamPathFindInterval => TimeSpan.FromSeconds(2);
+    protected virtual TimeSpan FailedPathFindDelay => TimeSpan.FromSeconds(5);
     protected virtual TimeSpan EquipCheckInterval => TimeSpan.FromSeconds(5);
     protected virtual IReadOnlyList<DesiredItem> DesiredItems => Array.Empty<DesiredItem>();
     private DateTime _nextEquipCheck = DateTime.UtcNow;
@@ -469,6 +470,7 @@ public class BaseAI
         {
             _travelPath = null;
             _searchDestination = null;
+            Client.UpdateAction("roaming...");
             return;
         }
 
@@ -482,6 +484,7 @@ public class BaseAI
             {
                 _travelPath = null;
                 _searchDestination = null;
+                Client.UpdateAction("roaming...");
                 return;
             }
             step = _travelPath[_travelIndex];
@@ -490,6 +493,7 @@ public class BaseAI
         {
             _travelPath = null;
             _searchDestination = null;
+            Client.UpdateAction("roaming...");
             return;
         }
 
@@ -1004,12 +1008,12 @@ public class BaseAI
                             if (!moved)
                             {
                                 _lostTargetPath = null;
-                                _nextPathFindTime = DateTime.MinValue;
+                                _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                             }
                             else if (_lostTargetPath.Count <= 1)
                             {
                                 _lostTargetPath = null;
-                                _nextPathFindTime = DateTime.MinValue;
+                                _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                             }
                         }
                     }
@@ -1037,6 +1041,7 @@ public class BaseAI
                             {
                                 _currentRoamPath = null;
                                 _searchDestination = null;
+                                _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                                 await Task.Delay(WalkDelay);
                                 continue;
                             }
@@ -1050,11 +1055,12 @@ public class BaseAI
                         {
                             _currentRoamPath = null;
                             _searchDestination = null;
+                            _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                         }
                         else if (_currentRoamPath.Count <= 1)
                         {
                             _currentRoamPath = null;
-                            _nextPathFindTime = DateTime.MinValue;
+                            _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                         }
                     }
                 }
@@ -1084,12 +1090,12 @@ public class BaseAI
                         if (!moved)
                         {
                             _currentRoamPath = null;
-                            _nextPathFindTime = DateTime.MinValue;
+                            _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                         }
                         else if (_currentRoamPath.Count <= 1)
                         {
                             _currentRoamPath = null;
-                            _nextPathFindTime = DateTime.MinValue;
+                            _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
                         }
                     }
                 }
