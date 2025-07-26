@@ -1078,7 +1078,7 @@ public class BaseAI
                         }
                     }
 
-                    if (traveling && _currentRoamPath != null && _currentRoamPath.Count > 0)
+                    if (traveling && _currentRoamPath != null && _currentRoamPath.Count > 1)
                     {
                         bool moved = await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
                         if (!moved)
@@ -1086,7 +1086,7 @@ public class BaseAI
                             _currentRoamPath = null;
                             _nextPathFindTime = DateTime.MinValue;
                         }
-                        else if (_currentRoamPath.Count < 1)
+                        else if (_currentRoamPath.Count <= 1)
                         {
                             _currentRoamPath = null;
                             _nextPathFindTime = DateTime.MinValue;

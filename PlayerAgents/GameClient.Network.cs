@@ -141,12 +141,12 @@ public sealed partial class GameClient
                 ReportStatus();
                 break;
             case S.MapChanged mc:
-                if (!string.IsNullOrEmpty(_currentMapFile) && !_dead && _pendingMoveTarget.HasValue)
+                if (!string.IsNullOrEmpty(_currentMapFile) && !_dead && _pendingMovementAction.Count > 0)
                 {
-                    var srcLoc = _pendingMoveTarget.Value;
                     var srcFile = _currentMapFile;
                     var destFile = mc.FileName;
                     var destLoc = mc.Location;
+                    var pending = _pendingMovementAction.ToList();
                     _movementSaveCts?.Cancel();
                     var cts = new CancellationTokenSource();
                     _movementSaveCts = cts;
@@ -156,12 +156,14 @@ public sealed partial class GameClient
                         {
                             await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
                             if (!cts.IsCancellationRequested)
-                                _movementMemory.AddMovement(srcFile, srcLoc, destFile, destLoc);
+                                foreach (var srcLoc in pending)
+                                    _movementMemory.AddMovement(srcFile, srcLoc, destFile, destLoc);
                         }
                         catch (TaskCanceledException) { }
                         finally
                         {
                             _pendingMoveTarget = null;
+                            _pendingMovementAction.Clear();
                             if (ReferenceEquals(_movementSaveCts, cts))
                                 _movementSaveCts = null;
                         }
@@ -215,8 +217,10 @@ public sealed partial class GameClient
                     _movementSaveCts?.Cancel();
                     _movementSaveCts = null;
                     _pendingMoveTarget = null;
+                    _pendingMovementAction.Clear();
                 }
-                CancelMovementDeleteCheck();
+                if (loc.Location != _currentLocation)
+                    CancelMovementDeleteCheck();
                 _currentLocation = loc.Location;
                 _navData?.Remove(_currentLocation);
                 ReportStatus();
@@ -274,6 +278,7 @@ public sealed partial class GameClient
                     _lastMoveTime = DateTime.UtcNow;
                     _canRun = true;
                     _pendingMoveTarget = null;
+                    _pendingMovementAction.Clear();
                     _navData?.Remove(_currentLocation);
                 }
                 break;
@@ -285,6 +290,7 @@ public sealed partial class GameClient
                     _currentLocation = oru.Location;
                     _lastMoveTime = DateTime.UtcNow;
                     _pendingMoveTarget = null;
+                    _pendingMovementAction.Clear();
                     _navData?.Remove(_currentLocation);
                 }
                 break;
@@ -292,6 +298,7 @@ public sealed partial class GameClient
                 CancelMovementDeleteCheck();
                 _currentLocation = push.Location;
                 _pendingMoveTarget = null;
+                _pendingMovementAction.Clear();
                 break;
             case S.ObjectPushed opu:
                 UpdateTrackedObject(opu.ObjectID, opu.Location, opu.Direction);
@@ -300,6 +307,7 @@ public sealed partial class GameClient
                     CancelMovementDeleteCheck();
                     _currentLocation = opu.Location;
                     _pendingMoveTarget = null;
+                    _pendingMovementAction.Clear();
                 }
                 break;
             case S.Struck st:

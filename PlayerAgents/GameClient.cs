@@ -34,6 +34,7 @@ public sealed partial class GameClient
     private readonly TaskCompletionSource<MirClass> _classTcs = new();
     private Point _currentLocation = Point.Empty;
     private Point? _pendingMoveTarget;
+    private readonly List<Point> _pendingMovementAction = new();
     private string _playerName = string.Empty;
     private string _currentAction = string.Empty;
     private uint _objectId;
@@ -559,12 +560,14 @@ public sealed partial class GameClient
         }
     }
 
-    private bool IsOnKnownMovementCell()
+    private bool IsKnownMovementCell(Point loc)
     {
         if (string.IsNullOrEmpty(_currentMapFile)) return false;
         var map = Path.GetFileNameWithoutExtension(_currentMapFile);
-        return _movementMemory.GetAll().Any(e => e.SourceMap == map && e.SourceX == _currentLocation.X && e.SourceY == _currentLocation.Y);
+        return _movementMemory.GetAll().Any(e => e.SourceMap == map && e.SourceX == loc.X && e.SourceY == loc.Y);
     }
+
+    private bool IsOnKnownMovementCell() => IsKnownMovementCell(_currentLocation);
 
     private void CancelMovementDeleteCheck()
     {
@@ -591,8 +594,8 @@ public sealed partial class GameClient
                     string.Equals(_currentMapFile, map, StringComparison.OrdinalIgnoreCase) &&
                     _currentLocation == loc)
                 {
-                    if (_movementMemory.RemoveMovements(map, loc))
-                        MovementEntryRemoved?.Invoke();
+                    _movementMemory.RemoveMovements(map, loc);
+                    MovementEntryRemoved?.Invoke();
                 }
             }
             catch (TaskCanceledException) { }
