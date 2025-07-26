@@ -10,8 +10,6 @@ using Shared;
 public sealed class BuyItem
 {
     public int Index { get; set; }
-    [JsonIgnore]
-    public ItemInfo? Info { get; set; }
 }
 
 public sealed class BuyItemConverter : JsonConverter<BuyItem>

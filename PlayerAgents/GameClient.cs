@@ -270,6 +270,66 @@ public sealed partial class GameClient
         return false;
     }
 
+    private bool WantsToBuy(ItemInfo info)
+    {
+        if (info == null) return false;
+
+        bool need = false;
+
+        if (_equipment != null)
+        {
+            var item = new UserItem(info);
+            for (int slot = 0; slot < _equipment.Length; slot++)
+            {
+                var equipSlot = (EquipmentSlot)slot;
+                if (!IsItemForSlot(info, equipSlot)) continue;
+                if (!CanEquipItem(item, equipSlot)) continue;
+
+                var current = _equipment[slot];
+                int newScore = GetItemScore(item, equipSlot);
+                int currentScore = current != null ? GetItemScore(current, equipSlot) : -1;
+                if (newScore > currentScore)
+                {
+                    need = true;
+                    break;
+                }
+            }
+        }
+
+        if (!need)
+        {
+            var desired = DesiredItemsProvider?.Invoke();
+            if (desired != null)
+            {
+                var item = new UserItem(info);
+                foreach (var d in desired)
+                {
+                    if (MatchesDesiredItem(item, d) && NeedMoreOfDesiredItem(d))
+                    {
+                        need = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return need && _gold >= info.Price;
+    }
+
+    private bool ShouldCheckBuyInteraction(NpcEntry entry)
+    {
+        if (entry.BuyItems == null || entry.BuyItems.Any(b => !ItemInfoDict.ContainsKey(b.Index)))
+            return true;
+
+        foreach (var b in entry.BuyItems)
+        {
+            if (ItemInfoDict.TryGetValue(b.Index, out var info) && WantsToBuy(info))
+                return true;
+        }
+
+        return false;
+    }
+
     private static bool CanBeEquipped(ItemInfo info)
     {
         foreach (EquipmentSlot slot in Enum.GetValues(typeof(EquipmentSlot)))
@@ -1123,7 +1183,7 @@ public sealed partial class GameClient
     {
         if (!entry.CheckedMerchantKeys)
             return true;
-        if (entry.CanBuy)
+        if (entry.CanBuy && ShouldCheckBuyInteraction(entry))
             return true;
         if (entry.CanSell && HasUnknownSellTypes(entry))
             return true;
@@ -1176,15 +1236,8 @@ public sealed partial class GameClient
         foreach (var it in _lastNpcGoods)
         {
             int index = it.Info?.Index ?? it.ItemIndex;
-            var existing = entry.BuyItems.Find(b => b.Index == index);
-            if (existing == null)
-            {
-                entry.BuyItems.Add(new BuyItem { Index = index, Info = it.Info });
-            }
-            else if (existing.Info == null)
-            {
-                existing.Info = it.Info;
-            }
+            if (!entry.BuyItems.Any(b => b.Index == index))
+                entry.BuyItems.Add(new BuyItem { Index = index });
         }
 
         _npcMemory.SaveChanges();
@@ -1399,7 +1452,7 @@ public sealed partial class GameClient
             }
             string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
             buyKey = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
-            if (entry.BuyItems == null || entry.BuyItems.All(b => b.Info == null))
+            if (entry.BuyItems == null || entry.BuyItems.All(b => !ItemInfoDict.ContainsKey(b.Index)))
             {
                 needBuyCheck = true;
                 if (buyKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))
