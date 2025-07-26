@@ -453,9 +453,6 @@ public sealed partial class GameClient
             return;
         }
 
-        if (_hasPausedMapSession)
-            FinalizePausedMapSession();
-
         // finalize any existing active tracking
         if (!string.IsNullOrEmpty(_trackedMapFile))
             FinalizeMapExpRate();
