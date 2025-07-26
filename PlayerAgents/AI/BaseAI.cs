@@ -1052,7 +1052,7 @@ public class BaseAI
                 }
                 else if (traveling && _searchDestination.HasValue)
                 {
-                    if (_currentRoamPath == null || _currentRoamPath.Count <= 1)
+                    if (_currentRoamPath == null || _currentRoamPath.Count < 1)
                     {
                         if (DateTime.UtcNow >= _nextPathFindTime)
                         {
@@ -1078,7 +1078,7 @@ public class BaseAI
                             _currentRoamPath = null;
                             _nextPathFindTime = DateTime.MinValue;
                         }
-                        else if (_currentRoamPath.Count <= 1)
+                        else if (_currentRoamPath.Count < 1)
                         {
                             _currentRoamPath = null;
                             _nextPathFindTime = DateTime.MinValue;

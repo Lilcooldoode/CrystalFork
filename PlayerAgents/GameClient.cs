@@ -80,6 +80,18 @@ public sealed partial class GameClient
     private MirClass? _mapStartClass;
     private long _mapExpGained;
 
+    private TimeSpan _mapElapsedBeforePause = TimeSpan.Zero;
+    private bool _mapExpPaused;
+    private string _trackedMapFile = string.Empty;
+
+    private string _pausedMapFile = string.Empty;
+    private long _pausedMapExpGained;
+    private TimeSpan _pausedMapElapsed = TimeSpan.Zero;
+    private long _pausedMapStartExp;
+    private MirClass? _pausedMapClass;
+    private ushort _pausedMapLevel;
+    private bool _hasPausedMapSession;
+
     // store information on nearby objects
     private readonly ConcurrentDictionary<uint, TrackedObject> _trackedObjects = new();
     private readonly ConcurrentDictionary<System.Drawing.Point, int> _blockingCells = new();
@@ -427,41 +439,124 @@ public sealed partial class GameClient
 
     private void StartMapExpTracking(string mapFile)
     {
+        // resume if we previously paused on this map at this level
+        if (_hasPausedMapSession && _pausedMapFile == mapFile && _pausedMapLevel == _level)
+        {
+            _trackedMapFile = mapFile;
+            _mapElapsedBeforePause = _pausedMapElapsed;
+            _mapStartTime = DateTime.UtcNow;
+            _mapStartExp = _pausedMapStartExp;
+            _mapExpGained = _pausedMapExpGained;
+            _mapStartLevel = _pausedMapLevel;
+            _mapStartClass = _pausedMapClass;
+            _hasPausedMapSession = false;
+            return;
+        }
+
+        if (_hasPausedMapSession)
+            FinalizePausedMapSession();
+
+        // finalize any existing active tracking
+        if (!string.IsNullOrEmpty(_trackedMapFile))
+            FinalizeMapExpRate();
+
+        _trackedMapFile = mapFile;
+        _mapElapsedBeforePause = TimeSpan.Zero;
         _mapStartTime = DateTime.UtcNow;
         _mapStartExp = _experience;
         _mapExpGained = 0;
         _mapStartLevel = _level;
         _mapStartClass = _playerClass;
+        _mapExpPaused = false;
+    }
+
+    private void PauseMapExpTracking()
+    {
+        if (string.IsNullOrEmpty(_trackedMapFile))
+            return;
+
+        TimeSpan elapsed = _mapElapsedBeforePause;
+        if (!_mapExpPaused && _mapStartTime != DateTime.MinValue)
+            elapsed += DateTime.UtcNow - _mapStartTime;
+
+        if (_hasPausedMapSession)
+            FinalizePausedMapSession();
+
+        _pausedMapFile = _trackedMapFile;
+        _pausedMapExpGained = _mapExpGained;
+        _pausedMapElapsed = elapsed;
+        _pausedMapStartExp = _mapStartExp;
+        _pausedMapClass = _mapStartClass;
+        _pausedMapLevel = _mapStartLevel;
+        _hasPausedMapSession = true;
+
+        _trackedMapFile = string.Empty;
+        _mapStartTime = DateTime.MinValue;
+        _mapElapsedBeforePause = TimeSpan.Zero;
+        _mapExpGained = 0;
+        _mapExpPaused = false;
+    }
+
+    private void FinalizePausedMapSession()
+    {
+        if (!_hasPausedMapSession || string.IsNullOrEmpty(_pausedMapFile) || _pausedMapClass == null)
+            return;
+
+        if (_pausedMapElapsed >= TimeSpan.FromMinutes(15))
+        {
+            double rate = _pausedMapExpGained / _pausedMapElapsed.TotalHours;
+            _expRateMemory.AddRate(_pausedMapFile, _pausedMapClass.Value, _pausedMapLevel, rate);
+        }
+
+        _hasPausedMapSession = false;
+        _pausedMapFile = string.Empty;
+        _pausedMapExpGained = 0;
+        _pausedMapElapsed = TimeSpan.Zero;
+        _pausedMapStartExp = 0;
+        _pausedMapClass = null;
+        _pausedMapLevel = 0;
     }
 
     private void FinalizeMapExpRate()
     {
-        if (string.IsNullOrEmpty(_currentMapFile)) return;
-        if (_mapStartTime == DateTime.MinValue) return;
-        var elapsed = DateTime.UtcNow - _mapStartTime;
-        if (elapsed >= TimeSpan.FromMinutes(15))
+        if (string.IsNullOrEmpty(_trackedMapFile)) return;
+
+        TimeSpan elapsed = _mapElapsedBeforePause;
+        if (!_mapExpPaused && _mapStartTime != DateTime.MinValue)
+            elapsed += DateTime.UtcNow - _mapStartTime;
+
+        if (elapsed >= TimeSpan.FromMinutes(15) && _mapStartClass != null)
         {
-            if (_mapStartClass != null)
-            {
-                double rate = _mapExpGained / elapsed.TotalHours;
-                _expRateMemory.AddRate(_currentMapFile, _mapStartClass.Value, _mapStartLevel, rate);
-            }
+            double rate = _mapExpGained / elapsed.TotalHours;
+            _expRateMemory.AddRate(_trackedMapFile, _mapStartClass.Value, _mapStartLevel, rate);
         }
+
+        _mapElapsedBeforePause = TimeSpan.Zero;
+        _mapExpPaused = false;
+        _mapStartTime = DateTime.MinValue;
+        _trackedMapFile = string.Empty;
     }
 
     public void ProcessMapExpRateInterval()
     {
-        if (string.IsNullOrEmpty(_currentMapFile)) return;
-        if (_mapStartTime == DateTime.MinValue) return;
-        var elapsed = DateTime.UtcNow - _mapStartTime;
+        if (string.IsNullOrEmpty(_trackedMapFile)) return;
+        if (_mapExpPaused || _mapStartTime == DateTime.MinValue) return;
+
+        var elapsed = _mapElapsedBeforePause + (DateTime.UtcNow - _mapStartTime);
         if (elapsed >= TimeSpan.FromMinutes(15))
         {
             if (_mapStartClass != null)
             {
                 double rate = _mapExpGained / elapsed.TotalHours;
-                _expRateMemory.AddRate(_currentMapFile, _mapStartClass.Value, _mapStartLevel, rate);
+                _expRateMemory.AddRate(_trackedMapFile, _mapStartClass.Value, _mapStartLevel, rate);
             }
-            StartMapExpTracking(_currentMapFile);
+
+            _mapElapsedBeforePause = TimeSpan.Zero;
+            _mapStartTime = DateTime.UtcNow;
+            _mapStartExp = _experience;
+            _mapExpGained = 0;
+            _mapStartLevel = _level;
+            _mapStartClass = _playerClass;
         }
     }
 

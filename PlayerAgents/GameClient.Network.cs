@@ -167,7 +167,7 @@ public sealed partial class GameClient
                         }
                     }));
                 }
-                FinalizeMapExpRate();
+                PauseMapExpTracking();
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentMapName = mc.Title;
                 _currentLocation = mc.Location;
@@ -436,6 +436,9 @@ public sealed partial class GameClient
                 _experience = lc.Experience;
                 MarkStatsDirty();
                 ReportStatus();
+                // reset exp rate tracking when our level changes
+                if (!string.IsNullOrEmpty(_currentMapFile))
+                    StartMapExpTracking(_currentMapFile);
                 break;
             case S.Chat chat:
                 HandleTradeFailChat(chat.Message);
