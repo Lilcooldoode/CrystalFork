@@ -250,7 +250,7 @@ public sealed partial class GameClient
                     var key = (entry.Name, entry.MapFile, entry.X, entry.Y);
                     if (!_recentNpcInteractions.TryGetValue(key, out var last) || DateTime.UtcNow - last >= TimeSpan.FromSeconds(10))
                     {
-                        if (!IgnoreNpcInteractions)
+                        if (!IgnoreNpcInteractions && NeedsNpcInteraction(entry))
                         {
                             if (!_npcQueue.Contains(on.ObjectID))
                                 _npcQueue.Enqueue(on.ObjectID);

@@ -1118,6 +1118,21 @@ public sealed partial class GameClient
         return false;
     }
 
+    private bool NeedsNpcInteraction(NpcEntry entry)
+    {
+        if (!entry.CheckedMerchantKeys)
+            return true;
+        if (entry.CanBuy && entry.BuyItemIndexes == null)
+            return true;
+        if (entry.CanSell && HasUnknownSellTypes(entry))
+            return true;
+        if (entry.CanRepair && HasUnknownRepairTypes(entry))
+            return true;
+        if (entry.CanSpecialRepair && HasUnknownRepairTypes(entry, true))
+            return true;
+        return false;
+    }
+
     private async Task HandleNpcSellAsync(NpcEntry entry)
     {
         await DetermineSellTypesAsync(entry);
@@ -1437,6 +1452,12 @@ public sealed partial class GameClient
         if (buyKey != null)
         {
             _npcActionTasks.Enqueue((buyKey, CreateCheckBuyTask(buyKey)));
+        }
+
+        if (!entry.CheckedMerchantKeys)
+        {
+            entry.CheckedMerchantKeys = true;
+            changed = true;
         }
 
         if (changed)

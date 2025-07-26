@@ -22,6 +22,7 @@ public sealed class NpcEntry
     public List<ItemType>? CannotRepairItemTypes { get; set; }
     public List<ItemType>? SpecialRepairItemTypes { get; set; }
     public List<ItemType>? CannotSpecialRepairItemTypes { get; set; }
+    public bool CheckedMerchantKeys { get; set; }
 }
 
 public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>

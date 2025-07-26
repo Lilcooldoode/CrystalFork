@@ -1037,7 +1037,6 @@ public class BaseAI
                             {
                                 _currentRoamPath = null;
                                 _searchDestination = null;
-                                _nextPathFindTime = DateTime.MinValue;
                                 await Task.Delay(WalkDelay);
                                 continue;
                             }
@@ -1051,7 +1050,6 @@ public class BaseAI
                         {
                             _currentRoamPath = null;
                             _searchDestination = null;
-                            _nextPathFindTime = DateTime.MinValue;
                         }
                         else if (_currentRoamPath.Count <= 1)
                         {
