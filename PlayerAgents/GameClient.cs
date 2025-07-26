@@ -1171,12 +1171,19 @@ public sealed partial class GameClient
         _lastNpcGoodsType = type;
 
         entry.CanBuy = true;
-        entry.BuyItemIndexes ??= new List<int>();
+        entry.BuyItems ??= new List<BuyItem>();
         foreach (var it in _lastNpcGoods)
         {
             int index = it.Info?.Index ?? it.ItemIndex;
-            if (!entry.BuyItemIndexes.Contains(index))
-                entry.BuyItemIndexes.Add(index);
+            var existing = entry.BuyItems.Find(b => b.Index == index);
+            if (existing == null)
+            {
+                entry.BuyItems.Add(new BuyItem { Index = index, Info = it.Info });
+            }
+            else if (existing.Info == null)
+            {
+                existing.Info = it.Info;
+            }
         }
 
         _npcMemory.SaveChanges();
@@ -1379,7 +1386,7 @@ public sealed partial class GameClient
             }
             string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
             buyKey = keyList.FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
-            if (entry.BuyItemIndexes == null)
+            if (entry.BuyItems == null || entry.BuyItems.All(b => b.Info == null))
             {
                 needBuyCheck = true;
                 if (buyKey.Equals("@BUYBACK", StringComparison.OrdinalIgnoreCase))

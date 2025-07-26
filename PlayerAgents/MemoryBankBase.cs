@@ -20,6 +20,8 @@ public abstract class MemoryBankBase<TEntry>
         Load();
     }
 
+    protected virtual JsonSerializerOptions CreateJsonOptions() => new() { WriteIndented = true };
+
     private void AcquireFileMutex()
     {
         try
@@ -47,7 +49,7 @@ public abstract class MemoryBankBase<TEntry>
             if (File.Exists(_path))
             {
                 using var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                items = JsonSerializer.Deserialize<List<TEntry>>(fs);
+                items = JsonSerializer.Deserialize<List<TEntry>>(fs, CreateJsonOptions());
                 _lastWriteTime = File.GetLastWriteTimeUtc(_path);
             }
         }
@@ -70,7 +72,7 @@ public abstract class MemoryBankBase<TEntry>
         string json;
         lock (_lock)
         {
-            json = JsonSerializer.Serialize(_entries, new JsonSerializerOptions { WriteIndented = true });
+            json = JsonSerializer.Serialize(_entries, CreateJsonOptions());
         }
 
         AcquireFileMutex();

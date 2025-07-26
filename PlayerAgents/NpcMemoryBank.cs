@@ -3,7 +3,30 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Shared;
+
+public sealed class BuyItem
+{
+    public int Index { get; set; }
+    [JsonIgnore]
+    public ItemInfo? Info { get; set; }
+}
+
+public sealed class BuyItemConverter : JsonConverter<BuyItem>
+{
+    public override BuyItem Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        int index = reader.GetInt32();
+        return new BuyItem { Index = index };
+    }
+
+    public override void Write(Utf8JsonWriter writer, BuyItem value, JsonSerializerOptions options)
+    {
+        writer.WriteNumberValue(value.Index);
+    }
+}
 
 public sealed class NpcEntry
 {
@@ -15,7 +38,8 @@ public sealed class NpcEntry
     public bool CanSell { get; set; }
     public bool CanRepair { get; set; }
     public bool CanSpecialRepair { get; set; }
-    public List<int>? BuyItemIndexes { get; set; }
+    [JsonPropertyName("BuyItemIndexes")]
+    public List<BuyItem>? BuyItems { get; set; }
     public List<ItemType>? SellItemTypes { get; set; }
     public List<ItemType>? CannotSellItemTypes { get; set; }
     public List<ItemType>? RepairItemTypes { get; set; }
@@ -32,6 +56,13 @@ public sealed class NpcMemoryBank : MemoryBankBase<NpcEntry>
     {
         foreach (var e in _entries)
             _lookup[(e.Name, e.MapFile, e.X, e.Y)] = e;
+    }
+
+    protected override JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = base.CreateJsonOptions();
+        options.Converters.Add(new BuyItemConverter());
+        return options;
     }
 
     protected override void OnLoaded()
