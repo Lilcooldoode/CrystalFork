@@ -254,8 +254,6 @@ public sealed partial class GameClient
                         {
                             if (!_npcQueue.Contains(on.ObjectID))
                                 _npcQueue.Enqueue(on.ObjectID);
-                            if (!_dialogNpcId.HasValue && _movementSaveCts == null)
-                                ProcessNextNpcInQueue();
                         }
                     }
                 }

@@ -540,25 +540,9 @@ public class BaseAI
             int count = matchedTypes.Sum(t => sellGroups[t].Sum(x => x.sell));
             Client.Log($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {count} items");
 
-            var map = Client.CurrentMap;
-            if (map == null) break;
-            bool foundPath = true;
-            while (Functions.MaxDistance(Client.CurrentLocation, loc) > 6)
-            {
-                var path = await FindPathAsync(map, Client.CurrentLocation, loc, npcId, 6);
-                if (path.Count == 0)
-                {
-                    Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
-                    foundPath = false;
-                    break;
-                }
-                await MoveAlongPathAsync(path, loc);
-                await Task.Delay(WalkDelay);
-                map = Client.CurrentMap;
-                if (map == null) break;
-            }
+            var reached = await Client.MoveWithinRangeAsync(loc, npcId, 6, NpcInteractionType.Selling);
 
-            if (Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
+            if (reached)
             {
                 if (npcId == 0)
                     Client.TryFindNearestNpc(types, out npcId, out _, out entry, out matchedTypes, includeUnknowns: false);
@@ -580,8 +564,11 @@ public class BaseAI
                     break;
                 }
             }
-
-            if (!foundPath) break; // resume normal behaviour if we cannot reach npc
+            else
+            {
+                Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
+                break;
+            }
         }
         Client.IgnoreNpcInteractions = false;
         Client.ResumeNpcInteractions();
@@ -620,25 +607,9 @@ public class BaseAI
                     Client.Log($"I am heading to {entry.Name} at {loc.X}, {loc.Y} to repair {string.Join(", ", itemNames)}");
             }
 
-            var map = Client.CurrentMap;
-            if (map == null) break;
-            bool foundPath = true;
-            while (Functions.MaxDistance(Client.CurrentLocation, loc) > 6)
-            {
-                var path = await FindPathAsync(map, Client.CurrentLocation, loc, npcId, 6);
-                if (path.Count == 0)
-                {
-                    Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
-                    foundPath = false;
-                    break;
-                }
-                await MoveAlongPathAsync(path, loc);
-                await Task.Delay(WalkDelay);
-                map = Client.CurrentMap;
-                if (map == null) break;
-            }
+            var reached = await Client.MoveWithinRangeAsync(loc, npcId, 6, NpcInteractionType.Repairing);
 
-            if (Functions.MaxDistance(Client.CurrentLocation, loc) <= 6)
+            if (reached)
             {
                 if (npcId == 0)
                     Client.TryFindNearestRepairNpc(types, out npcId, out _, out entry, out matched, includeUnknowns: false);
@@ -659,8 +630,11 @@ public class BaseAI
                     break;
                 }
             }
-
-            if (!foundPath) break;
+            else
+            {
+                Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
+                break;
+            }
         }
 
         Client.IgnoreNpcInteractions = false;
@@ -744,6 +718,18 @@ public class BaseAI
             foreach (var kv in _monsterIgnoreTimes.ToList())
                 if (DateTime.UtcNow >= kv.Value)
                     _monsterIgnoreTimes.Remove(kv.Key);
+
+            if (!Client.IsProcessingNpc && Client.TryDequeueNpc(out var npcId, out var entry))
+            {
+                var npcLoc = new Point(entry.X, entry.Y);
+                var reached = await Client.MoveWithinRangeAsync(npcLoc, npcId, 6, NpcInteractionType.General);
+                if (reached)
+                    Client.StartNpcInteraction(npcId, entry);
+                else
+                    Client.Log($"Could not path to {entry.Name}");
+                await Task.Delay(WalkDelay);
+                continue;
+            }
 
             var map = Client.CurrentMap;
             if (map == null || !Client.IsMapLoaded)

@@ -180,6 +180,7 @@ public sealed partial class GameClient
     public bool IsHarvesting => _awaitingHarvest;
     public bool MovementSavePending => _movementSaveCts != null;
     public bool IgnoreNpcInteractions { get; set; }
+    public NpcInteractionType CurrentNpcInteraction { get; private set; } = NpcInteractionType.General;
 
     private static void Bind(UserItem item)
     {
@@ -1207,16 +1208,28 @@ public sealed partial class GameClient
 
     private void ProcessNextNpcInQueue()
     {
-        if (IgnoreNpcInteractions || _movementSaveCts != null) return;
+        // NPC interactions are initiated by the AI loop
+    }
+
+    internal bool TryDequeueNpc(out uint id, out NpcEntry entry)
+    {
+        id = 0;
+        entry = default!;
+
+        if (IgnoreNpcInteractions || _movementSaveCts != null)
+            return false;
+
         while (_npcQueue.Count > 0)
         {
-            var id = _npcQueue.Dequeue();
-            if (_npcEntries.TryGetValue(id, out var entry))
+            var next = _npcQueue.Dequeue();
+            if (_npcEntries.TryGetValue(next, out entry))
             {
-                StartNpcInteraction(id, entry);
-                break;
+                id = next;
+                return true;
             }
         }
+
+        return false;
     }
 
     private async void ProcessNpcActionQueue()
@@ -1235,7 +1248,7 @@ public sealed partial class GameClient
         await item.action();
     }
 
-    private async void StartNpcInteraction(uint id, NpcEntry entry)
+    internal async void StartNpcInteraction(uint id, NpcEntry entry)
     {
         _dialogNpcId = id;
         _npcInteractionStart = DateTime.UtcNow;
@@ -1488,6 +1501,36 @@ public sealed partial class GameClient
     public void ResumeNpcInteractions()
     {
         ProcessNextNpcInQueue();
+    }
+
+    public async Task<bool> MoveWithinRangeAsync(Point target, uint ignoreId, int range, NpcInteractionType interactionType)
+    {
+        var map = CurrentMap;
+        if (map == null) return false;
+
+        CurrentNpcInteraction = interactionType;
+        int attempts = 0;
+        const int maxAttempts = 50; // ~10 seconds with 200ms delay
+
+        while (Functions.MaxDistance(CurrentLocation, target) > range && attempts < maxAttempts)
+        {
+            var path = await MovementHelper.FindPathAsync(this, map, CurrentLocation, target, ignoreId, range);
+            if (path.Count == 0)
+                return false;
+
+            await MovementHelper.MoveAlongPathAsync(this, path, target);
+            await Task.Delay(200);
+
+            map = CurrentMap;
+            if (map == null)
+                return false;
+
+            attempts++;
+        }
+
+        bool success = Functions.MaxDistance(CurrentLocation, target) <= range;
+        CurrentNpcInteraction = NpcInteractionType.General;
+        return success;
     }
 
     private static void FireAndForget(Task task)
