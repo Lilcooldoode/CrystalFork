@@ -22,7 +22,11 @@ public sealed class Config
 
     public int PlayerCount { get; set; }
     public int ConcurrentLogins { get; set; } = 50;
+    // 0 disables limit
+    public int MaximumConnections { get; set; } = 0;
     public bool AutoScale { get; set; } = true;
+    public double AutoScaleMinCpu { get; set; } = 50.0;
+    public double AutoScaleMaxCpu { get; set; } = 60.0;
 
     // Single agent fields for backwards compatibility
     public string AccountID { get; set; } = string.Empty;
@@ -228,12 +232,20 @@ internal class Program
                     finally
                     {
                         lock (clientLock) runningClients.Remove(client);
+                        logger.RemoveAgent(client.PlayerName);
                     }
                 });
             }
 
             foreach (var agent in agentConfigs)
+            {
+                lock (clientLock)
+                {
+                    if (config.MaximumConnections > 0 && runningClients.Count >= config.MaximumConnections)
+                        break;
+                }
                 await StartAgentAsync(agent);
+            }
 
             if (config.AutoScale)
             {
@@ -247,12 +259,12 @@ internal class Program
                         await Task.Delay(TimeSpan.FromSeconds(5));
                         var usage = cpu.GetCpuUsage();
 
-                        if (usage < 50)
+                        if (usage < config.AutoScaleMinCpu)
                         {
                             low += 5;
                             high = 0;
                         }
-                        else if (usage > 60)
+                        else if (usage > config.AutoScaleMaxCpu)
                         {
                             high += 5;
                             low = 0;
@@ -267,6 +279,12 @@ internal class Program
                             low = 0;
                             for (int i = 0; i < 50; i++)
                             {
+                                lock (clientLock)
+                                {
+                                    if (config.MaximumConnections > 0 && runningClients.Count >= config.MaximumConnections)
+                                        break;
+                                }
+
                                 var idx = Interlocked.Increment(ref nextIndex);
                                 var ac = new AgentConfig
                                 {
@@ -276,6 +294,7 @@ internal class Program
                                 };
                                 logger.RegisterAgent(ac.CharacterName);
                                 await StartAgentAsync(ac);
+                                await Task.Delay(200);
                             }
                         }
 
@@ -287,7 +306,12 @@ internal class Program
                                 toDrop = runningClients.TakeLast(50).ToList();
 
                             foreach (var c in toDrop)
+                            {
                                 await c.DisconnectAsync();
+                                lock (clientLock) runningClients.Remove(c);
+                                logger.RemoveAgent(c.PlayerName);
+                                await Task.Delay(200);
+                            }
                         }
                     }
                 });

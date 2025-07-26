@@ -20,12 +20,18 @@ public sealed class AgentStatus
 public interface IAgentLogger
 {
     void RegisterAgent(string agent);
+    void RemoveAgent(string agent);
     void UpdateStatus(string agent, AgentStatus status);
 }
 
 public sealed class ConsoleAgentLogger : IAgentLogger
 {
     public void RegisterAgent(string agent)
+    {
+        // no-op
+    }
+
+    public void RemoveAgent(string agent)
     {
         // no-op
     }
@@ -44,6 +50,11 @@ public sealed class NullAgentLogger : IAgentLogger
         // no-op
     }
 
+    public void RemoveAgent(string agent)
+    {
+        // no-op
+    }
+
     public void UpdateStatus(string agent, AgentStatus status)
     {
         // no-op
@@ -54,6 +65,7 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
 {
     private readonly Dictionary<string, AgentStatus> _status = new();
     private readonly List<string> _order = new();
+    private readonly HashSet<string> _registered = new();
     private readonly object _lockObj = new();
     private readonly Timer _timer;
     private readonly CpuMonitor _cpu = new();
@@ -78,10 +90,22 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
     {
         lock (_lockObj)
         {
-            if (!_status.ContainsKey(agent))
+            if (_registered.Add(agent))
             {
                 _status[agent] = new AgentStatus();
                 _order.Add(agent);
+                Render();
+            }
+        }
+    }
+
+    public void RemoveAgent(string agent)
+    {
+        lock (_lockObj)
+        {
+            if (_registered.Remove(agent) && _status.Remove(agent))
+            {
+                _order.Remove(agent);
                 Render();
             }
         }
@@ -91,15 +115,10 @@ public sealed class SummaryAgentLogger : IAgentLogger, IDisposable
     {
         lock (_lockObj)
         {
-            if (!_status.ContainsKey(agent))
-            {
-                _status[agent] = status;
-                _order.Add(agent);
-            }
-            else
-            {
-                _status[agent] = status;
-            }
+            if (!_registered.Contains(agent))
+                return;
+
+            _status[agent] = status;
         }
     }
 
