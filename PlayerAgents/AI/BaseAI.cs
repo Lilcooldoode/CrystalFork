@@ -1035,7 +1035,9 @@ public class BaseAI
                             _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
                             if (_currentRoamPath.Count == 0)
                             {
-                                _searchDestination = GetRandomPoint(map, Random, current, 50);
+                                _currentRoamPath = null;
+                                _searchDestination = null;
+                                _nextPathFindTime = DateTime.MinValue;
                                 await Task.Delay(WalkDelay);
                                 continue;
                             }
@@ -1048,7 +1050,7 @@ public class BaseAI
                         if (!moved)
                         {
                             _currentRoamPath = null;
-                            _searchDestination = GetRandomPoint(map, Random, current, 50);
+                            _searchDestination = null;
                             _nextPathFindTime = DateTime.MinValue;
                         }
                         else if (_currentRoamPath.Count <= 1)
