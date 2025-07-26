@@ -506,6 +506,47 @@ public class BaseAI
         return keep;
     }
 
+    private async Task<bool> InteractWithNpcAsync(Point location, uint npcId, NpcEntry? entry,
+        NpcInteractionType interactionType, IReadOnlyList<(UserItem item, ushort count)>? sellItems = null)
+    {
+        var reached = await Client.MoveWithinRangeAsync(location, npcId, 6, interactionType);
+        if (!reached)
+        {
+            Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
+            return false;
+        }
+
+        if (npcId == 0 && entry != null)
+            npcId = await Client.ResolveNpcIdAsync(entry);
+
+        if (npcId == 0)
+        {
+            Client.Log($"Could not find NPC to {interactionType.ToString().ToLower()}");
+            return false;
+        }
+
+        switch (interactionType)
+        {
+            case NpcInteractionType.General:
+                if (entry != null)
+                    Client.StartNpcInteraction(npcId, entry);
+                break;
+            case NpcInteractionType.Selling:
+                if (sellItems != null)
+                {
+                    await Client.SellItemsToNpcAsync(npcId, sellItems);
+                    Client.Log($"Finished selling to {entry?.Name ?? npcId.ToString()}");
+                }
+                break;
+            case NpcInteractionType.Repairing:
+                await Client.RepairItemsAtNpcAsync(npcId);
+                Client.Log($"Finished repairing at {entry?.Name ?? npcId.ToString()}");
+                break;
+        }
+
+        return true;
+    }
+
     private async Task HandleInventoryAsync()
     {
         if (_sellingItems) return;
@@ -540,33 +581,16 @@ public class BaseAI
             int count = matchedTypes.Sum(t => sellGroups[t].Sum(x => x.sell));
             Client.Log($"Heading to {entry?.Name ?? "unknown npc"} at {loc.X},{loc.Y} to sell {count} items");
 
-            var reached = await Client.MoveWithinRangeAsync(loc, npcId, 6, NpcInteractionType.Selling);
+            var sellItems = matchedTypes.SelectMany(t => sellGroups[t]).Where(x => x.item != null).ToList();
+            bool success = await InteractWithNpcAsync(loc, npcId, entry, NpcInteractionType.Selling, sellItems);
 
-            if (reached)
+            if (success)
             {
-                if (npcId == 0)
-                    Client.TryFindNearestNpc(types, out npcId, out _, out entry, out matchedTypes, includeUnknowns: false);
-
-                if (npcId == 0 || entry != null)
-                    npcId = await Client.ResolveNpcIdAsync(entry);
-
-                if (npcId != 0)
-                {
-                    var sellItems = matchedTypes.SelectMany(t => sellGroups[t]).Where(x => x.item != null).ToList();
-                    await Client.SellItemsToNpcAsync(npcId, sellItems);
-                    Client.Log($"Finished selling to {entry?.Name ?? npcId.ToString()}");
-                    foreach (var t in matchedTypes)
-                        sellGroups.Remove(t);
-                }
-                else
-                {
-                    Client.Log($"Could not find NPC to sell items");
-                    break;
-                }
+                foreach (var t in matchedTypes)
+                    sellGroups.Remove(t);
             }
             else
             {
-                Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
                 break;
             }
         }
@@ -607,32 +631,15 @@ public class BaseAI
                     Client.Log($"I am heading to {entry.Name} at {loc.X}, {loc.Y} to repair {string.Join(", ", itemNames)}");
             }
 
-            var reached = await Client.MoveWithinRangeAsync(loc, npcId, 6, NpcInteractionType.Repairing);
+            bool success = await InteractWithNpcAsync(loc, npcId, entry, NpcInteractionType.Repairing);
 
-            if (reached)
+            if (success)
             {
-                if (npcId == 0)
-                    Client.TryFindNearestRepairNpc(types, out npcId, out _, out entry, out matched, includeUnknowns: false);
-
-                if (npcId == 0 || entry != null)
-                    npcId = await Client.ResolveNpcIdAsync(entry);
-
-                if (npcId != 0)
-                {
-                    await Client.RepairItemsAtNpcAsync(npcId);
-                    Client.Log($"Finished repairing at {entry?.Name ?? npcId.ToString()}");
-                    foreach (var t in matched)
-                        types.Remove(t);
-                }
-                else
-                {
-                    Client.Log("Could not find NPC to repair items");
-                    break;
-                }
+                foreach (var t in matched)
+                    types.Remove(t);
             }
             else
             {
-                Client.Log($"Could not path to {entry?.Name ?? npcId.ToString()}");
                 break;
             }
         }
@@ -722,11 +729,7 @@ public class BaseAI
             if (!Client.IsProcessingNpc && Client.TryDequeueNpc(out var npcId, out var entry))
             {
                 var npcLoc = new Point(entry.X, entry.Y);
-                var reached = await Client.MoveWithinRangeAsync(npcLoc, npcId, 6, NpcInteractionType.General);
-                if (reached)
-                    Client.StartNpcInteraction(npcId, entry);
-                else
-                    Client.Log($"Could not path to {entry.Name}");
+                await InteractWithNpcAsync(npcLoc, npcId, entry, NpcInteractionType.General);
                 await Task.Delay(WalkDelay);
                 continue;
             }
