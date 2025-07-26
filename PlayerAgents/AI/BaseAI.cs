@@ -42,6 +42,14 @@ public class BaseAI
         Client = client;
         Client.ItemScoreFunc = GetItemScore;
         Client.DesiredItemsProvider = () => DesiredItems;
+        Client.MovementEntryRemoved += OnMovementEntryRemoved;
+    }
+
+    private void OnMovementEntryRemoved()
+    {
+        _travelPath = null;
+        _currentRoamPath = null;
+        _nextPathFindTime = DateTime.MinValue;
     }
 
     protected virtual int WalkDelay => 600;

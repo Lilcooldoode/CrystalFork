@@ -8,6 +8,7 @@ public sealed partial class GameClient
     {
         if (_stream == null) return;
         if (_movementSaveCts != null) return;
+        CancelMovementDeleteCheck();
         var target = Functions.PointMove(_currentLocation, direction, 1);
         await TryOpenDoorAsync(target);
         Log($"I am walking to {target.X}, {target.Y}");
@@ -22,6 +23,7 @@ public sealed partial class GameClient
     {
         if (_stream == null) return;
         if (_movementSaveCts != null) return;
+        CancelMovementDeleteCheck();
         var first = Functions.PointMove(_currentLocation, direction, 1);
         var target = Functions.PointMove(_currentLocation, direction, 2);
         await TryOpenDoorAsync(first);
@@ -80,6 +82,7 @@ public sealed partial class GameClient
         if (_movementSaveCts != null) return;
         _pendingMoveTarget = _currentLocation;
         await SendAsync(new C.Turn { Direction = direction });
+        MaybeStartMovementDeleteCheck();
     }
 
     public async Task TownReviveAsync()

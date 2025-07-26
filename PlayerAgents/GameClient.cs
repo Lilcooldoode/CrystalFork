@@ -21,6 +21,8 @@ public sealed partial class GameClient
     private readonly NavDataManager _navDataManager;
     private readonly IAgentLogger? _logger;
     private CancellationTokenSource? _movementSaveCts;
+    private CancellationTokenSource? _movementDeleteCts;
+    public event Action? MovementEntryRemoved;
     private TcpClient? _client;
     private NetworkStream? _stream;
     private long _pingTime;
@@ -555,6 +557,51 @@ public sealed partial class GameClient
             _mapStartLevel = _level;
             _mapStartClass = _playerClass;
         }
+    }
+
+    private bool IsOnKnownMovementCell()
+    {
+        if (string.IsNullOrEmpty(_currentMapFile)) return false;
+        var map = Path.GetFileNameWithoutExtension(_currentMapFile);
+        return _movementMemory.GetAll().Any(e => e.SourceMap == map && e.SourceX == _currentLocation.X && e.SourceY == _currentLocation.Y);
+    }
+
+    private void CancelMovementDeleteCheck()
+    {
+        _movementDeleteCts?.Cancel();
+        _movementDeleteCts = null;
+    }
+
+    private void MaybeStartMovementDeleteCheck()
+    {
+        if (_movementDeleteCts != null) return;
+        if (!IsOnKnownMovementCell()) return;
+
+        var map = _currentMapFile;
+        var loc = _currentLocation;
+
+        var cts = new CancellationTokenSource();
+        _movementDeleteCts = cts;
+        FireAndForget(Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), cts.Token);
+                if (!cts.IsCancellationRequested &&
+                    string.Equals(_currentMapFile, map, StringComparison.OrdinalIgnoreCase) &&
+                    _currentLocation == loc)
+                {
+                    if (_movementMemory.RemoveMovements(map, loc))
+                        MovementEntryRemoved?.Invoke();
+                }
+            }
+            catch (TaskCanceledException) { }
+            finally
+            {
+                if (ReferenceEquals(_movementDeleteCts, cts))
+                    _movementDeleteCts = null;
+            }
+        }));
     }
 
     public string? GetBestMapForLevel()

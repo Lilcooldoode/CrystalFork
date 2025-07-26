@@ -62,6 +62,29 @@ public sealed class MapMovementMemoryBank : MemoryBankBase<MapMovementEntry>
             Save();
     }
 
+    public bool RemoveMovements(string sourceMapFile, Point sourceLocation)
+    {
+        bool removed = false;
+        lock (_lock)
+        {
+            ReloadIfUpdated();
+            var src = Path.GetFileNameWithoutExtension(sourceMapFile);
+            for (int i = _entries.Count - 1; i >= 0; i--)
+            {
+                var e = _entries[i];
+                if (e.SourceMap == src && e.SourceX == sourceLocation.X && e.SourceY == sourceLocation.Y)
+                {
+                    _entries.RemoveAt(i);
+                    _keys.Remove(Key(e.SourceMap, e.SourceX, e.SourceY, e.DestinationMap, e.DestinationX, e.DestinationY));
+                    removed = true;
+                }
+            }
+        }
+        if (removed)
+            Save();
+        return removed;
+    }
+
     public IReadOnlyList<string> GetKnownMaps()
     {
         lock (_lock)

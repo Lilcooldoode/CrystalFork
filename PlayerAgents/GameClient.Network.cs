@@ -167,6 +167,7 @@ public sealed partial class GameClient
                         }
                     }));
                 }
+                CancelMovementDeleteCheck();
                 PauseMapExpTracking();
                 _currentMapFile = Path.Combine(MapManager.MapDirectory, mc.FileName + ".map");
                 _currentMapName = mc.Title;
@@ -180,6 +181,7 @@ public sealed partial class GameClient
                 ReportStatus();
                 break;
             case S.UserInformation info:
+                CancelMovementDeleteCheck();
                 _objectId = info.ObjectID;
                 _playerClass = info.Class;
                 _baseStats = new BaseStats(info.Class);
@@ -214,6 +216,7 @@ public sealed partial class GameClient
                     _movementSaveCts = null;
                     _pendingMoveTarget = null;
                 }
+                CancelMovementDeleteCheck();
                 _currentLocation = loc.Location;
                 _navData?.Remove(_currentLocation);
                 ReportStatus();
@@ -266,6 +269,7 @@ public sealed partial class GameClient
                 UpdateTrackedObject(ow.ObjectID, ow.Location, ow.Direction);
                 if (ow.ObjectID == _objectId)
                 {
+                    CancelMovementDeleteCheck();
                     _currentLocation = ow.Location;
                     _lastMoveTime = DateTime.UtcNow;
                     _canRun = true;
@@ -277,6 +281,7 @@ public sealed partial class GameClient
                 UpdateTrackedObject(oru.ObjectID, oru.Location, oru.Direction);
                 if (oru.ObjectID == _objectId)
                 {
+                    CancelMovementDeleteCheck();
                     _currentLocation = oru.Location;
                     _lastMoveTime = DateTime.UtcNow;
                     _pendingMoveTarget = null;
@@ -284,6 +289,7 @@ public sealed partial class GameClient
                 }
                 break;
             case S.Pushed push:
+                CancelMovementDeleteCheck();
                 _currentLocation = push.Location;
                 _pendingMoveTarget = null;
                 break;
@@ -291,6 +297,7 @@ public sealed partial class GameClient
                 UpdateTrackedObject(opu.ObjectID, opu.Location, opu.Direction);
                 if (opu.ObjectID == _objectId)
                 {
+                    CancelMovementDeleteCheck();
                     _currentLocation = opu.Location;
                     _pendingMoveTarget = null;
                 }
@@ -350,6 +357,7 @@ public sealed partial class GameClient
             case S.Death death:
                 Log("I have died.");
                 _dead = true;
+                CancelMovementDeleteCheck();
                 _currentLocation = death.Location;
                 _navData?.Remove(_currentLocation);
                 break;
