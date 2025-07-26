@@ -56,6 +56,8 @@ public class BaseAI
     protected virtual int AttackDelay => 1400;
     protected virtual TimeSpan RoamPathFindInterval => TimeSpan.FromSeconds(2);
     protected virtual TimeSpan FailedPathFindDelay => TimeSpan.FromSeconds(5);
+    protected virtual TimeSpan TravelPathFindInterval => TimeSpan.FromSeconds(1);
+    protected virtual TimeSpan FailedTravelPathFindDelay => TimeSpan.FromSeconds(1);
     protected virtual TimeSpan EquipCheckInterval => TimeSpan.FromSeconds(5);
     protected virtual IReadOnlyList<DesiredItem> DesiredItems => Array.Empty<DesiredItem>();
     private DateTime _nextEquipCheck = DateTime.UtcNow;
@@ -932,7 +934,7 @@ public class BaseAI
                         if (DateTime.UtcNow >= _nextPathFindTime)
                         {
                             _currentRoamPath = await FindPathAsync(map, current, _searchDestination.Value, 0, 0);
-                            _nextPathFindTime = DateTime.UtcNow + RoamPathFindInterval;
+                            _nextPathFindTime = DateTime.UtcNow + TravelPathFindInterval;
                             if (_currentRoamPath.Count == 0)
                             {
                                 _travelPath = null;
@@ -951,12 +953,12 @@ public class BaseAI
                         if (!moved)
                         {
                             _currentRoamPath = null;
-                            _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
+                            _nextPathFindTime = DateTime.UtcNow + FailedTravelPathFindDelay;
                         }
                         else if (_currentRoamPath.Count <= 1)
                         {
                             _currentRoamPath = null;
-                            _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
+                            _nextPathFindTime = DateTime.UtcNow + TravelPathFindInterval;
                         }
                     }
                 }
