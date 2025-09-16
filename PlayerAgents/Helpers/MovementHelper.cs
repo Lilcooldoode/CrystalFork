@@ -156,6 +156,11 @@ public static class MovementHelper
         var entries = client.MovementMemory.GetAll()
             .Where(e => e.SourceMap != e.DestinationMap)
             .ToList();
+
+        var entriesBySource = entries
+            .GroupBy(e => e.SourceMap)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var queue = new Queue<(string Map, List<MapMovementEntry> Path)>();
         var visited = new HashSet<string> { startMap };
         queue.Enqueue((startMap, new List<MapMovementEntry>()));
@@ -169,12 +174,17 @@ public static class MovementHelper
                 return soFar;
             }
 
-            foreach (var e in entries)
+            if (!entriesBySource.TryGetValue(map, out var transitions))
+                continue;
+
+            foreach (var e in transitions)
             {
-                if (e.SourceMap != map) continue;
-                if (visited.Contains(e.DestinationMap)) continue;
-                visited.Add(e.DestinationMap);
-                var newList = new List<MapMovementEntry>(soFar) { e };
+                if (!visited.Add(e.DestinationMap)) continue;
+
+                var newList = new List<MapMovementEntry>(soFar.Count + 1);
+                newList.AddRange(soFar);
+                newList.Add(e);
+
                 queue.Enqueue((e.DestinationMap, newList));
             }
         }
