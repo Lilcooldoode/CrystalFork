@@ -50,8 +50,14 @@ public sealed partial class GameClient
     {
         var tcs = new TaskCompletionSource<bool>();
         _npcGoodsTcs = tcs;
+        _pendingGoodsNpcId = _dialogNpcId;
         if (cancellationToken != default)
-            cancellationToken.Register(() => tcs.TrySetCanceled());
+            cancellationToken.Register(() =>
+            {
+                tcs.TrySetCanceled();
+                if (ReferenceEquals(_npcGoodsTcs, tcs))
+                    _pendingGoodsNpcId = null;
+            });
         return tcs.Task;
     }
 

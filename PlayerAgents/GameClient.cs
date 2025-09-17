@@ -342,6 +342,9 @@ public sealed partial class GameClient
 
     private List<UserItem>? _lastNpcGoods;
     private PanelType _lastNpcGoodsType;
+    private uint? _pendingGoodsNpcId;
+    private uint? _lastNpcGoodsNpcId;
+    private NpcEntry? _lastNpcGoodsEntry;
 
 
     // Use a dictionary for faster lookups by item index
@@ -991,6 +994,10 @@ public sealed partial class GameClient
         var desired = DesiredItemsProvider?.Invoke();
         if (desired == null && _equipment == null) return false;
 
+        var goodsEntry = _lastNpcGoodsEntry;
+        if (goodsEntry == null && _lastNpcGoodsNpcId.HasValue)
+            _npcEntries.TryGetValue(_lastNpcGoodsNpcId.Value, out goodsEntry);
+
         foreach (var g in goods)
             Bind(g);
 
@@ -1056,10 +1063,10 @@ public sealed partial class GameClient
 
                     ushort qty = (ushort)Math.Min(buyCount, item.Info.StackSize);
 
-                    if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var npc))
+                    if (goodsEntry != null)
                     {
-                        Log($"I am buying {qty}x {item.Info.FriendlyName} from {npc.Name} for {item.Info.Price} gold each");
-                        UpdateLastStorageAction($"Buying {qty}x {item.Info.FriendlyName} from {npc.Name}");
+                        Log($"I am buying {qty}x {item.Info.FriendlyName} from {goodsEntry.Name} for {item.Info.Price} gold each");
+                        UpdateLastStorageAction($"Buying {qty}x {item.Info.FriendlyName} from {goodsEntry.Name}");
                     }
                     else
                     {
@@ -2223,8 +2230,12 @@ public sealed partial class GameClient
     private void ProcessNpcGoods(IEnumerable<UserItem> goods, PanelType type)
     {
         if (_npcGoodsTcs == null) return;
-        if (!_dialogNpcId.HasValue) return;
-        if (!_npcEntries.TryGetValue(_dialogNpcId.Value, out var entry)) return;
+
+        var npcId = _pendingGoodsNpcId ?? _dialogNpcId;
+        _pendingGoodsNpcId = null;
+
+        if (!npcId.HasValue) return;
+        if (!_npcEntries.TryGetValue(npcId.Value, out var entry)) return;
 
         if (_skipNextGoods)
         {
@@ -2235,6 +2246,8 @@ public sealed partial class GameClient
         if (type != PanelType.Buy && type != PanelType.BuySub)
             return;
 
+        _lastNpcGoodsNpcId = npcId;
+        _lastNpcGoodsEntry = entry;
         _lastNpcGoods = goods.Select(g =>
         {
             Bind(g);
