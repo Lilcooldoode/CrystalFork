@@ -29,6 +29,48 @@ public sealed partial class GameClient
         }
     }
 
+    private async Task SendChatAsync(string message)
+    {
+        if (_stream == null) return;
+        await WaitForChatSlotAsync();
+        await SendAsync(new C.Chat { Message = message });
+    }
+
+    private async Task WaitForChatSlotAsync()
+    {
+        while (true)
+        {
+            TimeSpan wait = TimeSpan.Zero;
+            await _chatThrottleLock.WaitAsync();
+            try
+            {
+                var now = DateTime.UtcNow;
+                while (_chatSendTimes.Count > 0 && now - _chatSendTimes.Peek() > ChatThrottleWindow)
+                    _chatSendTimes.Dequeue();
+
+                if (_chatSendTimes.Count < ChatThrottleLimit)
+                {
+                    _chatSendTimes.Enqueue(now);
+                    return;
+                }
+
+                var oldest = _chatSendTimes.Peek();
+                wait = ChatThrottleWindow - (now - oldest);
+                if (wait < TimeSpan.Zero)
+                    wait = TimeSpan.Zero;
+            }
+            finally
+            {
+                _chatThrottleLock.Release();
+            }
+
+            if (wait > TimeSpan.Zero)
+                await Task.Delay(wait);
+            else
+                await Task.Yield();
+        }
+    }
+
     private async Task ReceiveLoop()
     {
         if (_stream == null) return;

@@ -32,10 +32,10 @@ public sealed partial class GameClient
         Log(fullMessage);
     }
 
-    internal async Task SendWhisperAsync(string target, string message)
+    internal Task SendWhisperAsync(string target, string message)
     {
-        if (_stream == null) return;
-        await SendAsync(new C.Chat { Message = $"/{target} {message}" });
+        if (_stream == null) return Task.CompletedTask;
+        return SendChatAsync($"/{target} {message}");
     }
 
     private void HandleDebugCommand(string text)

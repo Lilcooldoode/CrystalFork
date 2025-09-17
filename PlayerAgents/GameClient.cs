@@ -14,6 +14,9 @@ using PlayerAgents.Map;
 
 public sealed partial class GameClient
 {
+    private static readonly TimeSpan ChatThrottleWindow = TimeSpan.FromSeconds(5);
+    private const int ChatThrottleLimit = 20;
+
     private readonly Config _config;
     private readonly NpcMemoryBank _npcMemory;
     private readonly MapMovementMemoryBank _movementMemory;
@@ -46,6 +49,8 @@ public sealed partial class GameClient
     private readonly MemoryStream _receiveStream = new();
     private readonly Random _random = new();
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private readonly SemaphoreSlim _chatThrottleLock = new(1, 1);
+    private readonly Queue<DateTime> _chatSendTimes = new();
     private MirClass? _playerClass;
     private BaseStats? _baseStats;
     private readonly TaskCompletionSource<MirClass> _classTcs = new();

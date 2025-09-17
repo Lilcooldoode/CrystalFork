@@ -478,7 +478,7 @@ public sealed partial class GameClient
         if (mount == null) return;
         if (mount.Slots.Length <= (int)MountSlot.Saddle || mount.Slots[(int)MountSlot.Saddle] == null) return;
 
-        await SendAsync(new C.Chat { Message = "@ride" });
+        await SendChatAsync("@ride");
         _ridingMount = true;
     }
 
@@ -487,7 +487,7 @@ public sealed partial class GameClient
         if (_stream == null) return;
         if (!_ridingMount) return;
 
-        await SendAsync(new C.Chat { Message = "@ride" });
+        await SendChatAsync("@ride");
         _ridingMount = false;
     }
 
