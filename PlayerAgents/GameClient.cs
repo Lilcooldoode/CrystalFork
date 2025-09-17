@@ -1022,6 +1022,7 @@ public sealed partial class GameClient
         int currentWeight = GetCurrentBagWeight();
         int maxWeight = GetMaxBagWeight();
         int freeSlots = _inventory?.Count(i => i == null) ?? int.MaxValue;
+        long availableGold = _gold;
 
         foreach (var item in orderedGoods)
         {
@@ -1059,14 +1060,28 @@ public sealed partial class GameClient
                 need = true;
             }
 
-            if (need && _gold >= item.Info.Price)
+            if (need && (item.Info.Price == 0 || availableGold >= item.Info.Price))
             {
-                while (buyCount > 0 && _gold >= item.Info.Price)
+                while (buyCount > 0 && (item.Info.Price == 0 || availableGold >= item.Info.Price))
                 {
                     if (freeSlots <= 0 || currentWeight + item.Weight > maxWeight)
                         break;
 
-                    ushort qty = (ushort)Math.Min(buyCount, item.Info.StackSize);
+                    ushort qty;
+                    if (item.Info.Price > 0)
+                    {
+                        int maxStack = Math.Min(buyCount, item.Info.StackSize);
+                        long affordableQty = Math.Min(maxStack, availableGold / item.Info.Price);
+                        if (affordableQty <= 0)
+                            break;
+                        qty = (ushort)affordableQty;
+                    }
+                    else
+                    {
+                        qty = (ushort)Math.Min(buyCount, item.Info.StackSize);
+                        if (qty == 0)
+                            break;
+                    }
 
                     if (goodsEntry != null)
                     {
@@ -1096,11 +1111,19 @@ public sealed partial class GameClient
                     freeSlots--;
                     currentWeight += item.Weight * qty;
                     buyCount -= qty;
+                    if (item.Info.Price > 0)
+                        availableGold -= (long)item.Info.Price * qty;
 
                     if (item.Info.Type == ItemType.Ring || item.Info.Type == ItemType.Bracelet)
                         buyCount = GetUpgradeCount(item.Info);
                     else if (item.Info.Type == ItemType.Potion && matchedDesired != null && NeedMoreOfDesiredItem(matchedDesired))
                         buyCount = GetDesiredItemBuyCount(matchedDesired, item);
+                }
+
+                if (need && item.Info.Price > 0 && buyCount > 0 && availableGold < item.Info.Price)
+                {
+                    cantAfford = true;
+                    UpdateLastStorageAction($"Cannot afford more {item.Info.FriendlyName}");
                 }
             }
             else if (need)
