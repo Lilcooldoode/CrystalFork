@@ -22,6 +22,8 @@ public class BaseAI
     private DateTime _nextPathFindTime = DateTime.MinValue;
     private MirDirection? _lastRoamDirection;
     private readonly Dictionary<string, DateTime> _groupRequestTimes = new();
+    private int? _lastLeaderPathSteps;
+    private readonly Dictionary<string, int> _memberPathStepCounts = new(StringComparer.OrdinalIgnoreCase);
 
 
     protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
@@ -793,6 +795,157 @@ public class BaseAI
                 IgnoreMonster(target.Id);
             }
             return true;
+        }
+
+        return false;
+    }
+
+    private async Task<(List<Point> Path, int PathSteps, int StepsOutsideRadius)> FindGroupPathAsync(PlayerAgents.Map.MapData map, Point start, TrackedObject target, int radius)
+    {
+        var path = await FindPathAsync(map, start, target.Location, target.Id, 0);
+        if (path.Count == 0)
+            return (path, int.MaxValue, int.MaxValue);
+
+        int pathSteps = Math.Max(path.Count - 1, 0);
+        int stepsOutsideRadius = pathSteps > radius ? pathSteps - radius : 0;
+
+        return (path, pathSteps, stepsOutsideRadius);
+    }
+
+    private static List<Point> TrimPathBySteps(List<Point> path, int stepsToTake)
+    {
+        if (path.Count == 0 || stepsToTake <= 0)
+            return new List<Point>();
+
+        int lastIndex = Math.Min(stepsToTake, path.Count - 1);
+        return path.GetRange(0, lastIndex + 1);
+    }
+
+    private async Task<bool> TryMaintainGroupSpacingAsync(PlayerAgents.Map.MapData map, Point current)
+    {
+        const int followerRadius = 7;
+        const int leaderRadius = 10;
+
+        if (Client.GroupLeader != null && !Client.IsGroupLeader)
+        {
+            var leaderName = Client.GroupLeader;
+            var leader = Client.TrackedObjects.Values
+                .Where(o => o.Type == ObjectType.Player && o.Name.Equals(leaderName, StringComparison.OrdinalIgnoreCase))
+                .FirstOrDefault();
+
+            if (leader == null)
+            {
+                _lastLeaderPathSteps = null;
+                return false;
+            }
+
+            var (path, pathSteps, stepsOutsideRadius) = await FindGroupPathAsync(map, current, leader, followerRadius);
+            if (path.Count == 0 || pathSteps == int.MaxValue)
+            {
+                if (_lastLeaderPathSteps != int.MaxValue)
+                {
+                    Client.Log($"Unable to find path to group leader {leader.Name}; treating as out of range (radius {followerRadius}).");
+                    _lastLeaderPathSteps = int.MaxValue;
+                }
+                await Task.Delay(WalkDelay);
+                return true;
+            }
+
+            if (stepsOutsideRadius > 0)
+            {
+                if (_lastLeaderPathSteps != pathSteps)
+                {
+                    Client.Log($"Group leader {leader.Name} is {pathSteps} steps away (allowed radius {followerRadius}), following path.");
+                    _lastLeaderPathSteps = pathSteps;
+                }
+
+                var followPath = TrimPathBySteps(path, stepsOutsideRadius);
+                if (followPath.Count > 1)
+                {
+                    bool moved = await MoveAlongPathAsync(followPath, followPath[followPath.Count - 1]);
+                    if (!moved)
+                    {
+                        Client.Log($"Failed to move along path toward group leader {leader.Name}.");
+                    }
+                }
+                await Task.Delay(WalkDelay);
+                return true;
+            }
+
+            if (_lastLeaderPathSteps.HasValue)
+                _lastLeaderPathSteps = null;
+
+            return false;
+        }
+
+        if (Client.IsGroupLeader)
+        {
+            TrackedObject? farMember = null;
+            List<Point>? regroupPath = null;
+            int farSteps = leaderRadius;
+
+            foreach (var name in Client.GroupMembers)
+            {
+                if (string.Equals(name, Client.PlayerName, StringComparison.OrdinalIgnoreCase)) continue;
+
+                var member = Client.TrackedObjects.Values
+                    .Where(o => o.Type == ObjectType.Player && o.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    .FirstOrDefault();
+
+                if (member == null)
+                {
+                    _memberPathStepCounts.Remove(name);
+                    continue;
+                }
+
+                var (path, pathSteps, stepsOutsideRadius) = await FindGroupPathAsync(map, current, member, leaderRadius);
+                var key = member.Name;
+                if (path.Count == 0 || pathSteps == int.MaxValue)
+                {
+                    if (!_memberPathStepCounts.TryGetValue(key, out var recorded) || recorded != int.MaxValue)
+                    {
+                        Client.Log($"Unable to find path to group member {key}; they are out of range (radius {leaderRadius}).");
+                        _memberPathStepCounts[key] = int.MaxValue;
+                    }
+                    continue;
+                }
+
+                if (stepsOutsideRadius > 0)
+                {
+                    if (!_memberPathStepCounts.TryGetValue(key, out var recorded) || recorded != pathSteps)
+                    {
+                        Client.Log($"Group member {key} is {pathSteps} steps away (allowed radius {leaderRadius}).");
+                        _memberPathStepCounts[key] = pathSteps;
+                    }
+
+                    if (pathSteps > farSteps)
+                    {
+                        farSteps = pathSteps;
+                        farMember = member;
+                        regroupPath = TrimPathBySteps(path, stepsOutsideRadius);
+                    }
+                }
+                else
+                {
+                    if (_memberPathStepCounts.ContainsKey(key))
+                        _memberPathStepCounts.Remove(key);
+                }
+            }
+
+            var allowed = new HashSet<string>(Client.GroupMembers, StringComparer.OrdinalIgnoreCase);
+            foreach (var key in _memberPathStepCounts.Keys.Where(name => !allowed.Contains(name)).ToList())
+                _memberPathStepCounts.Remove(key);
+
+            if (farMember != null && regroupPath != null)
+            {
+                bool moved = regroupPath.Count > 1 && await MoveAlongPathAsync(regroupPath, regroupPath[regroupPath.Count - 1]);
+                if (!moved)
+                {
+                    Client.Log($"Failed to move toward group member {farMember.Name} while regrouping.");
+                }
+                await Task.Delay(WalkDelay);
+                return true;
+            }
         }
 
         return false;
@@ -1811,44 +1964,8 @@ public class BaseAI
             }
 
             current = Client.CurrentLocation;
-            if (Client.GroupLeader != null && !Client.IsGroupLeader)
-            {
-                var leaderName = Client.GroupLeader;
-                var leader = Client.TrackedObjects.Values
-                    .Where(o => o.Type == ObjectType.Player && o.Name.Equals(leaderName, StringComparison.OrdinalIgnoreCase))
-                    .FirstOrDefault();
-                if (leader != null && !Functions.InRange(current, leader.Location, 7))
-                {
-                    await MoveToTargetAsync(map, current, leader, 7);
-                    await Task.Delay(WalkDelay);
-                    continue;
-                }
-            }
-            else if (Client.IsGroupLeader)
-            {
-                TrackedObject? farMember = null;
-                int maxDist = 0;
-                foreach (var name in Client.GroupMembers)
-                {
-                    if (string.Equals(name, Client.PlayerName, StringComparison.OrdinalIgnoreCase)) continue;
-                    var member = Client.TrackedObjects.Values
-                        .Where(o => o.Type == ObjectType.Player && o.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                        .FirstOrDefault();
-                    if (member == null) continue;
-                    int dist = Functions.MaxDistance(current, member.Location);
-                    if (dist > 10 && dist > maxDist)
-                    {
-                        maxDist = dist;
-                        farMember = member;
-                    }
-                }
-                if (farMember != null)
-                {
-                    await MoveToTargetAsync(map, current, farMember, 10);
-                    await Task.Delay(WalkDelay);
-                    continue;
-                }
-            }
+            if (await TryMaintainGroupSpacingAsync(map, current))
+                continue;
             if (await AvoidDangerousMonstersAsync(map, current))
             {
                 await Task.Delay(WalkDelay);
@@ -1962,21 +2079,12 @@ public class BaseAI
 
                 if (!traveling && !_lostTargetLocation.HasValue)
                 {
-                    if (Client.GroupLeader != null && !Client.IsGroupLeader)
+                    if (await TryMaintainGroupSpacingAsync(map, current))
                     {
-                        var leaderName = Client.GroupLeader;
-                        var leader = Client.TrackedObjects.Values
-                            .Where(o => o.Type == ObjectType.Player && o.Name.Equals(leaderName, StringComparison.OrdinalIgnoreCase))
-                            .FirstOrDefault();
-                        if (leader != null)
-                        {
-                            _searchDestination = null;
-                            _currentRoamPath = null;
-                            _lastRoamDirection = null;
-                            await MoveToTargetAsync(map, current, leader, 7);
-                            await Task.Delay(WalkDelay);
-                            continue;
-                        }
+                        _searchDestination = null;
+                        _currentRoamPath = null;
+                        _lastRoamDirection = null;
+                        continue;
                     }
 
                     if (_searchDestination == null ||
