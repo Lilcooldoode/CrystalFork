@@ -24,6 +24,8 @@ public class BaseAI
     private readonly Dictionary<string, DateTime> _groupRequestTimes = new();
     private int? _lastLeaderPathSteps;
     private readonly Dictionary<string, int> _memberPathStepCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _memberRegroupFailureCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _memberRegroupRetryTimes = new(StringComparer.OrdinalIgnoreCase);
 
 
     protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
@@ -882,11 +884,19 @@ public class BaseAI
         {
             TrackedObject? farMember = null;
             List<Point>? regroupPath = null;
+            string? farMemberName = null;
             int farSteps = leaderRadius;
 
             foreach (var name in Client.GroupMembers)
             {
                 if (string.Equals(name, Client.PlayerName, StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (_memberRegroupRetryTimes.TryGetValue(name, out var retryAt))
+                {
+                    if (DateTime.UtcNow < retryAt)
+                        continue;
+                    _memberRegroupRetryTimes.Remove(name);
+                }
 
                 var member = Client.TrackedObjects.Values
                     .Where(o => o.Type == ObjectType.Player && o.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
@@ -895,6 +905,8 @@ public class BaseAI
                 if (member == null)
                 {
                     _memberPathStepCounts.Remove(name);
+                    _memberRegroupFailureCounts.Remove(name);
+                    _memberRegroupRetryTimes.Remove(name);
                     continue;
                 }
 
@@ -907,6 +919,8 @@ public class BaseAI
                         Client.Log($"Unable to find path to group member {key}; they are out of range (radius {leaderRadius}).");
                         _memberPathStepCounts[key] = int.MaxValue;
                     }
+                    _memberRegroupFailureCounts.Remove(key);
+                    _memberRegroupRetryTimes.Remove(key);
                     continue;
                 }
 
@@ -922,6 +936,7 @@ public class BaseAI
                     {
                         farSteps = pathSteps;
                         farMember = member;
+                        farMemberName = key;
                         regroupPath = TrimPathBySteps(path, stepsOutsideRadius);
                     }
                 }
@@ -929,22 +944,40 @@ public class BaseAI
                 {
                     if (_memberPathStepCounts.ContainsKey(key))
                         _memberPathStepCounts.Remove(key);
+                    _memberRegroupFailureCounts.Remove(key);
+                    _memberRegroupRetryTimes.Remove(key);
                 }
             }
 
             var allowed = new HashSet<string>(Client.GroupMembers, StringComparer.OrdinalIgnoreCase);
             foreach (var key in _memberPathStepCounts.Keys.Where(name => !allowed.Contains(name)).ToList())
                 _memberPathStepCounts.Remove(key);
+            foreach (var key in _memberRegroupFailureCounts.Keys.Where(name => !allowed.Contains(name)).ToList())
+                _memberRegroupFailureCounts.Remove(key);
+            foreach (var key in _memberRegroupRetryTimes.Keys.Where(name => !allowed.Contains(name)).ToList())
+                _memberRegroupRetryTimes.Remove(key);
 
             if (farMember != null && regroupPath != null)
             {
+                var key = farMemberName ?? farMember.Name;
                 bool moved = regroupPath.Count > 1 && await MoveAlongPathAsync(regroupPath, regroupPath[regroupPath.Count - 1]);
-                if (!moved)
+                if (moved)
                 {
-                    Client.Log($"Failed to move toward group member {farMember.Name} while regrouping.");
+                    _memberRegroupFailureCounts.Remove(key);
+                    _memberRegroupRetryTimes.Remove(key);
+                    await Task.Delay(WalkDelay);
+                    return true;
                 }
-                await Task.Delay(WalkDelay);
-                return true;
+
+                int failures = _memberRegroupFailureCounts.TryGetValue(key, out var recordedFailure)
+                    ? recordedFailure + 1
+                    : 1;
+                _memberRegroupFailureCounts[key] = failures;
+                int capped = Math.Clamp(failures, 1, 5);
+                var retryDelay = TimeSpan.FromMilliseconds(WalkDelay * capped);
+                _memberRegroupRetryTimes[key] = DateTime.UtcNow + retryDelay;
+                Client.Log($"Failed to move toward group member {farMember.Name} while regrouping (attempt {failures}); retrying in {retryDelay.TotalSeconds:0.##}s.");
+                return false;
             }
         }
 
