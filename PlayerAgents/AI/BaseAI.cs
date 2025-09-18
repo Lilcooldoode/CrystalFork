@@ -111,7 +111,7 @@ public class BaseAI
         foreach (var obj in Client.TrackedObjects.Values)
         {
             if (obj.Type == ObjectType.Item && obj.Location == loc)
-                IgnoreItem(obj.Location, obj.Name, ItemRetryDelay);
+                IgnoreItem(obj.Location, obj.Name, ItemRetryDelay, linearIncrease: true);
         }
         if (_currentTarget != null &&
             _currentTarget.Type == ObjectType.Item &&
@@ -357,10 +357,12 @@ public class BaseAI
     {
         public DateTime RetryAt;
         public TimeSpan Delay;
+        public bool LinearIncrease;
 
-        public RetryInfo(TimeSpan delay)
+        public RetryInfo(TimeSpan delay, bool linearIncrease)
         {
             Delay = delay;
+            LinearIncrease = linearIncrease;
             RetryAt = DateTime.UtcNow + delay;
         }
     }
@@ -375,18 +377,34 @@ public class BaseAI
         }
     }
 
-    private void IgnoreItem(Point location, string name, TimeSpan baseDelay)
+    private void IgnoreItem(Point location, string name, TimeSpan baseDelay, bool linearIncrease = false)
     {
         var key = (location, name);
         if (_itemRetryTimes.TryGetValue(key, out var info))
         {
-            var newDelayTicks = Math.Max(info.Delay.Ticks * 2, baseDelay.Ticks);
-            info.Delay = TimeSpan.FromTicks(newDelayTicks);
+            if (linearIncrease)
+            {
+                if (!info.LinearIncrease || info.Delay < baseDelay)
+                {
+                    info.Delay = baseDelay;
+                }
+                else
+                {
+                    info.Delay += TimeSpan.FromSeconds(1);
+                }
+                info.LinearIncrease = true;
+            }
+            else
+            {
+                var newDelayTicks = Math.Max(info.Delay.Ticks * 2, baseDelay.Ticks);
+                info.Delay = TimeSpan.FromTicks(newDelayTicks);
+                info.LinearIncrease = false;
+            }
             info.RetryAt = DateTime.UtcNow + info.Delay;
         }
         else
         {
-            _itemRetryTimes[key] = new RetryInfo(baseDelay);
+            _itemRetryTimes[key] = new RetryInfo(baseDelay, linearIncrease);
         }
     }
 
@@ -773,7 +791,7 @@ public class BaseAI
                         (o.Type == ObjectType.Player || o.Type == ObjectType.Monster) &&
                         o.Location == target.Location);
                     var delay = path.Count == 0 || blocked ? UnreachableItemRetryDelay : ItemRetryDelay;
-                    IgnoreItem(target.Location, target.Name, delay);
+                    IgnoreItem(target.Location, target.Name, delay, linearIncrease: true);
                     _currentTarget = null;
                 }
                 return true;
