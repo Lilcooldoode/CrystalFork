@@ -1940,16 +1940,21 @@ public class BaseAI
 
                         if (_lostTargetPath != null && _lostTargetPath.Count > 0)
                         {
-                            bool moved = await MoveAlongPathAsync(_lostTargetPath, _lostTargetLocation.Value);
-                            if (!moved)
+                            var lostPath = _lostTargetPath;
+                            bool moved = await MoveAlongPathAsync(lostPath, _lostTargetLocation.Value);
+
+                            if (_lostTargetPath == lostPath)
                             {
-                                _lostTargetPath = null;
-                                _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
-                            }
-                            else if (_lostTargetPath.Count <= 1)
-                            {
-                                _lostTargetPath = null;
-                                _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
+                                if (!moved)
+                                {
+                                    _lostTargetPath = null;
+                                    _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
+                                }
+                                else if (lostPath.Count <= 1)
+                                {
+                                    _lostTargetPath = null;
+                                    _nextPathFindTime = DateTime.UtcNow + FailedPathFindDelay;
+                                }
                             }
                         }
                     }
@@ -2048,16 +2053,21 @@ public class BaseAI
 
                     if (traveling && _currentRoamPath != null && _currentRoamPath.Count >= 1)
                     {
-                        bool moved = await MoveAlongPathAsync(_currentRoamPath, _searchDestination.Value);
-                        if (!moved)
+                        var roamPath = _currentRoamPath;
+                        bool moved = await MoveAlongPathAsync(roamPath, _searchDestination.Value);
+
+                        if (_currentRoamPath == roamPath)
                         {
-                            _currentRoamPath = null;
-                            //_nextPathFindTime = DateTime.UtcNow + FailedTravelPathFindDelay;
-                        }
-                        else if (_currentRoamPath.Count <= 1)
-                        {
-                            _currentRoamPath = null;
-                            _nextPathFindTime = DateTime.UtcNow + FailedTravelPathFindDelay;
+                            if (!moved)
+                            {
+                                _currentRoamPath = null;
+                                //_nextPathFindTime = DateTime.UtcNow + FailedTravelPathFindDelay;
+                            }
+                            else if (roamPath.Count <= 1)
+                            {
+                                _currentRoamPath = null;
+                                _nextPathFindTime = DateTime.UtcNow + FailedTravelPathFindDelay;
+                            }
                         }
                     }
                 }
