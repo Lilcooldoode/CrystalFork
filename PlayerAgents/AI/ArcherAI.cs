@@ -119,7 +119,9 @@ public sealed class ArcherAI : BaseAI
         const int retreatRange = 3;
 
         int dist = Functions.MaxDistance(current, target.Location);
+        bool retreatFromTarget = dist <= retreatRange;
         bool canShoot = dist <= attackRange && CanShoot(map, current, target.Location);
+        bool nearOtherMonsters = !IsSafeFromOtherMonsters(current, target, retreatRange);
 
         if (!canShoot)
         {
@@ -177,7 +179,7 @@ public sealed class ArcherAI : BaseAI
             return true;
         }
 
-        if (dist <= retreatRange)
+        if (retreatFromTarget || nearOtherMonsters)
         {
             var safe = GetRetreatPoint(map, current, target, attackRange, retreatRange);
             if (safe != current)
@@ -191,16 +193,38 @@ public sealed class ArcherAI : BaseAI
                         _cachedShootSpot = null;
                         _nextShootSpotCheck = DateTime.MinValue;
                     }
-                    return moved;
                 }
             }
-            return true;
+            return false;
         }
 
         return false;
     }
 
-    private Point GetSafestPoint(MapData map, Point origin, TrackedObject target, int range)
+    protected override async Task AttackTargetAsync(TrackedObject target, Point current)
+    {
+        await base.AttackTargetAsync(target, Client.CurrentLocation);
+    }
+
+    private bool IsSafeFromOtherMonsters(Point location, TrackedObject target, int minDistance)
+    {
+        if (minDistance <= 0)
+            return true;
+
+        foreach (var obj in Client.TrackedObjects.Values)
+        {
+            if (obj.Type != ObjectType.Monster || obj.Dead || obj.Hidden) continue;
+            if (obj.Id == target.Id || obj.Tamed) continue;
+
+            int distance = Functions.MaxDistance(location, obj.Location);
+            if (distance <= minDistance)
+                return false;
+        }
+
+        return true;
+    }
+
+    private Point GetSafestPoint(MapData map, Point origin, TrackedObject target, int range, int retreatRange)
     {
         var obstacles = BuildObstacles(map);
         Point best = origin;
@@ -215,12 +239,16 @@ public sealed class ArcherAI : BaseAI
                 if (dist < range - 1 || dist > range) continue;
                 if (!map.IsWalkable(p.X, p.Y)) continue;
                 if (obstacles.Contains(p)) continue;
+                int distToTarget = Functions.MaxDistance(p, target.Location);
+                if (distToTarget < retreatRange) continue;
+                if (distToTarget > range) continue;
+                if (!IsSafeFromOtherMonsters(p, target, retreatRange)) continue;
                 if (!CanShoot(map, p, target.Location)) continue;
 
                 int min = 6;
                 foreach (var obj in Client.TrackedObjects.Values)
                 {
-                    if (obj.Type != ObjectType.Monster || obj.Dead || obj.Id == target.Id) continue;
+                    if (obj.Type != ObjectType.Monster || obj.Dead || obj.Hidden || obj.Tamed || obj.Id == target.Id) continue;
                     int d = Functions.MaxDistance(p, obj.Location);
                     if (d <= 6 && d < min) min = d;
                 }
@@ -247,12 +275,15 @@ public sealed class ArcherAI : BaseAI
             p = Functions.PointMove(origin, dir, i);
             if (!map.IsWalkable(p.X, p.Y)) break;
             if (obstacles.Contains(p)) break;
-            if (Functions.MaxDistance(p, target.Location) < retreatRange) continue;
+            int distanceToTarget = Functions.MaxDistance(p, target.Location);
+            if (distanceToTarget > attackRange) break;
+            if (distanceToTarget < retreatRange) continue;
+            if (!IsSafeFromOtherMonsters(p, target, retreatRange)) continue;
             if (CanShoot(map, p, target.Location))
                 return p;
         }
 
-        return GetSafestPoint(map, origin, target, attackRange);
+        return GetSafestPoint(map, origin, target, attackRange, retreatRange);
     }
 
     private Point GetNearestShootSpot(MapData map, TrackedObject target, Point current, int attackRange, int safeDist)
@@ -265,7 +296,8 @@ public sealed class ArcherAI : BaseAI
             if (d >= safeDist && d <= attackRange &&
                 map.IsWalkable(spot.X, spot.Y) &&
                 !obs.Contains(spot) &&
-                CanShoot(map, spot, target.Location))
+                CanShoot(map, spot, target.Location) &&
+                IsSafeFromOtherMonsters(spot, target, safeDist))
                 return spot;
         }
 
@@ -279,7 +311,9 @@ public sealed class ArcherAI : BaseAI
         {
             var p = queue.Dequeue();
             int dist = Functions.MaxDistance(p, target.Location);
-            if (p != current && dist >= safeDist && dist <= attackRange && CanShoot(map, p, target.Location))
+            if (p != current && dist >= safeDist && dist <= attackRange &&
+                CanShoot(map, p, target.Location) &&
+                IsSafeFromOtherMonsters(p, target, safeDist))
             {
                 _cachedShootSpot = p;
                 _nextShootSpotCheck = DateTime.UtcNow + TimeSpan.FromSeconds(2);
