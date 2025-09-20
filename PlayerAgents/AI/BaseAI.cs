@@ -1432,13 +1432,7 @@ public class BaseAI
             {
                 Client.Log($"Could not find NPC to {interactionType.ToString().ToLower()}");
                 if (entry != null)
-                {
-                    var near = Client.TrackedObjects.Values.FirstOrDefault(o => o.Type == ObjectType.Merchant &&
-                        Functions.MaxDistance(o.Location, location) <= NpcInteractionRange);
-                    if (near != null)
-                        Client.IgnoreNpc(entry);
-                    Client.RemoveNpc(entry);
-                }
+                    Client.HandleMissingNpc(entry, location, NpcInteractionRange);
                 return NpcInteractionResult.NpcNotFound;
             }
 
@@ -1561,7 +1555,14 @@ public class BaseAI
         if (!reached) return;
 
         if (npcId == 0 && entry != null)
+        {
             npcId = await Client.ResolveNpcIdAsync(entry);
+            if (npcId == 0)
+            {
+                Client.HandleMissingNpc(entry, loc, NpcInteractionRange);
+                return;
+            }
+        }
         if (npcId == 0) return;
 
         bool opened = await Client.OpenStorageAsync(npcId);
@@ -1835,7 +1836,14 @@ public class BaseAI
                 return;
 
             if (npcId == 0 && entry != null)
+            {
                 npcId = await Client.ResolveNpcIdAsync(entry);
+                if (npcId == 0)
+                {
+                    Client.HandleMissingNpc(entry, loc, NpcInteractionRange);
+                    return;
+                }
+            }
 
             if (npcId != 0)
                 await Client.OpenBuyPageAsync(npcId);

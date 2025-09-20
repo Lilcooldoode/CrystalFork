@@ -2663,6 +2663,15 @@ public sealed partial class GameClient
         _npcMemory.RemoveNpc(entry);
     }
 
+    public void HandleMissingNpc(NpcEntry entry, Point location, int range)
+    {
+        var near = _trackedObjects.Values.FirstOrDefault(o => o.Type == ObjectType.Merchant &&
+            Functions.MaxDistance(o.Location, location) <= range);
+        if (near != null)
+            IgnoreNpc(entry);
+        RemoveNpc(entry);
+    }
+
     public void IgnoreNpc(NpcEntry entry)
     {
         var key = (entry.Name, entry.MapFile, entry.X, entry.Y);
