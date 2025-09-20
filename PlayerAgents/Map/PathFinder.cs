@@ -8,6 +8,12 @@ namespace PlayerAgents.Map;
 public static class PathFinder
 {
     private const int StepLimit = 60000;
+    private static readonly Point[] Directions =
+    {
+        new(0, -1), new(1, 0), new(0, 1), new(-1, 0),
+        new(1, -1), new(1, 1), new(-1, 1), new(-1, -1)
+    };
+
     public readonly record struct MapPoint(string MapFile, Point Location);
 
     public static async Task<List<Point>> FindPathAsync(MapData map, Point start, Point end, ISet<Point>? obstacles = null, int radius = 1)
@@ -33,27 +39,24 @@ public static class PathFinder
         var gScore = new Dictionary<Point, int>();
         gScore[start] = 0;
         open.Enqueue(start, Heuristic(start, end));
-        var directions = new[]
-        {
-            new Point(0,-1), new Point(1,0), new Point(0,1), new Point(-1,0),
-            new Point(1,-1), new Point(1,1), new Point(-1,1), new Point(-1,-1)
-        };
-
         int steps = 0;
         int maxSteps = Math.Min((width * height) >> 1, StepLimit);
-        var closed = new HashSet<Point>();
+        var closed = new bool[width, height];
         while (open.Count > 0)
         {
             var current = open.Dequeue();
-            if (!closed.Add(current))
+            if ((uint)current.X >= width || (uint)current.Y >= height)
                 continue;
+            if (closed[current.X, current.Y])
+                continue;
+            closed[current.X, current.Y] = true;
             if (Functions.MaxDistance(current, end) <= radius)
                 return ReconstructPath(cameFrom, current);
 
             if (++steps > maxSteps)
                 break;
 
-            foreach (var dir in directions)
+            foreach (var dir in Directions)
             {
                 var neighbor = new Point(current.X + dir.X, current.Y + dir.Y);
                 if (!map.IsWalkable(neighbor.X, neighbor.Y)) continue;
@@ -85,7 +88,8 @@ public static class PathFinder
     {
         int dx = Math.Abs(a.X - b.X);
         int dy = Math.Abs(a.Y - b.Y);
-        return 10 * (dx + dy);
+        int min = Math.Min(dx, dy);
+        return 10 * (dx + dy) - 6 * min;
     }
 
     public static async Task<List<MapPoint>> FindPathAsync(MapMovementMemoryBank movements,
