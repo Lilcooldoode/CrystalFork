@@ -2404,12 +2404,13 @@ public sealed partial class GameClient
 
     private Func<Task> CreateSellTask(string key) => async () =>
     {
-        if (_npcInteraction == null) return;
+        var interaction = _npcInteraction;
+        if (interaction == null) return;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var waitTask = WaitForNpcSellAsync(cts.Token);
         try
         {
-            await _npcInteraction.SelectFromMainAsync(key, cts.Token);
+            await interaction.SelectFromMainAsync(key, cts.Token);
             await waitTask;
         }
         catch (OperationCanceledException)
@@ -2424,12 +2425,13 @@ public sealed partial class GameClient
 
     private Func<Task> CreateRepairTask(string key) => async () =>
     {
-        if (_npcInteraction == null) return;
+        var interaction = _npcInteraction;
+        if (interaction == null) return;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var waitTask = WaitForNpcRepairAsync(cts.Token);
         try
         {
-            await _npcInteraction.SelectFromMainAsync(key, cts.Token);
+            await interaction.SelectFromMainAsync(key, cts.Token);
             await waitTask;
         }
         catch (OperationCanceledException)
@@ -2444,14 +2446,15 @@ public sealed partial class GameClient
 
     private Func<Task> CreateCheckBuyTask(string key) => async () =>
     {
-        if (_npcInteraction == null) return;
+        var interaction = _npcInteraction;
+        if (interaction == null) return;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var waitTask = WaitForNpcGoodsAsync(cts.Token);
         try
         {
             if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
                 Log($"I am looking at {entry.Name}'s goods list");
-            await _npcInteraction.SelectFromMainAsync(key, cts.Token);
+            await interaction.SelectFromMainAsync(key, cts.Token);
             await waitTask;
             if (_lastNpcGoods != null)
                 await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
@@ -2468,12 +2471,13 @@ public sealed partial class GameClient
 
     private Func<Task> CreateCheckRepairTask(string key) => async () =>
     {
-        if (_npcInteraction == null) return;
+        var interaction = _npcInteraction;
+        if (interaction == null) return;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
         var waitTask = WaitForNpcRepairAsync(cts.Token);
         try
         {
-            await _npcInteraction.SelectFromMainAsync(key, cts.Token);
+            await interaction.SelectFromMainAsync(key, cts.Token);
             await waitTask;
             if (_dialogNpcId.HasValue && _npcEntries.TryGetValue(_dialogNpcId.Value, out var entry))
             {
