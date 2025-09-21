@@ -1704,6 +1704,12 @@ public class BaseAI
 
         if (_pendingBuyTypes.Count == 0) return cantAfford;
 
+        if (!keepIgnore && NeedsImmediateSellOrRepair())
+        {
+            TriggerInventoryRefresh();
+            return cantAfford;
+        }
+
         _buyAttempted = true;
         _buyingItems = true;
         Client.UpdateAction("buying items");
