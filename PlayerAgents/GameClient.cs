@@ -12,6 +12,13 @@ using S = ServerPackets;
 using Shared;
 using PlayerAgents.Map;
 
+public enum BuyItemsResult
+{
+    Success,
+    CantAfford,
+    InventoryFull
+}
+
 public sealed partial class GameClient
 {
     private static readonly TimeSpan ChatThrottleWindow = TimeSpan.FromSeconds(5);
@@ -991,13 +998,14 @@ public sealed partial class GameClient
         }
     }
 
-    private async Task<bool> BuyNeededItemsFromGoodsAsync(List<UserItem> goods, PanelType type)
+    private async Task<BuyItemsResult> BuyNeededItemsFromGoodsAsync(List<UserItem> goods, PanelType type)
     {
         bool cantAfford = false;
-        if (goods.Count == 0) return cantAfford;
+        bool inventoryFull = false;
+        if (goods.Count == 0) return BuyItemsResult.Success;
 
         var desired = DesiredItemsProvider?.Invoke();
-        if (desired == null && _equipment == null) return false;
+        if (desired == null && _equipment == null) return BuyItemsResult.Success;
 
         var goodsEntry = _lastNpcGoodsEntry;
         if (goodsEntry == null && _lastNpcGoodsNpcId.HasValue)
@@ -1062,10 +1070,14 @@ public sealed partial class GameClient
 
             if (need && (item.Info.Price == 0 || availableGold >= item.Info.Price))
             {
+                bool itemOutOfSpace = false;
                 while (buyCount > 0 && (item.Info.Price == 0 || availableGold >= item.Info.Price))
                 {
                     if (freeSlots <= 0 || currentWeight + item.Weight > maxWeight)
+                    {
+                        itemOutOfSpace = true;
                         break;
+                    }
 
                     ushort qty;
                     if (item.Info.Price > 0)
@@ -1120,10 +1132,29 @@ public sealed partial class GameClient
                         buyCount = GetDesiredItemBuyCount(matchedDesired, item);
                 }
 
-                if (need && item.Info.Price > 0 && buyCount > 0 && availableGold < item.Info.Price)
+                if (need && buyCount > 0)
                 {
-                    cantAfford = true;
-                    UpdateLastStorageAction($"Cannot afford more {item.Info.FriendlyName}");
+                    if (itemOutOfSpace)
+                    {
+                        inventoryFull = true;
+                        var message = goodsEntry != null
+                            ? $"No space to buy more {item.Info.FriendlyName} from {goodsEntry.Name}"
+                            : $"No space to buy more {item.Info.FriendlyName}";
+                        Log(message);
+                        UpdateLastStorageAction(message);
+                        break;
+                    }
+
+                    if (item.Info.Price > 0 && availableGold < item.Info.Price)
+                    {
+                        cantAfford = true;
+                        UpdateLastStorageAction($"Cannot afford more {item.Info.FriendlyName}");
+                    }
+                    else
+                    {
+                        cantAfford = true;
+                        UpdateLastStorageAction($"Cannot afford {item.Info.FriendlyName}");
+                    }
                 }
             }
             else if (need)
@@ -1131,8 +1162,15 @@ public sealed partial class GameClient
                 cantAfford = true;
                 UpdateLastStorageAction($"Cannot afford {item.Info.FriendlyName}");
             }
+
+            if (inventoryFull)
+                break;
         }
-        return cantAfford;
+
+        if (inventoryFull)
+            return BuyItemsResult.InventoryFull;
+
+        return cantAfford ? BuyItemsResult.CantAfford : BuyItemsResult.Success;
     }
 
     public IReadOnlyList<UserItem>? Inventory => _inventory;
@@ -2457,7 +2495,7 @@ public sealed partial class GameClient
             await interaction.SelectFromMainAsync(key, cts.Token);
             await waitTask;
             if (_lastNpcGoods != null)
-                await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
+                _ = await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
         }
         catch (OperationCanceledException)
         {

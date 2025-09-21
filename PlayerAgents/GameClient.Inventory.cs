@@ -414,14 +414,14 @@ public sealed partial class GameClient
         return cantAfford;
     }
 
-    public async Task<bool> BuyNeededItemsAtNpcAsync(uint npcId)
+    public async Task<BuyItemsResult> BuyNeededItemsAtNpcAsync(uint npcId)
     {
         var entry = await ResolveNpcEntryAsync(npcId);
         if (entry == null)
         {
             LogError($"Unknown NPC id {npcId} while opening storage");
             UpdateLastStorageAction($"Unknown NPC id {npcId}");
-            return false;
+            return BuyItemsResult.Success;
         }
         BeginTransaction(npcId, entry);
         UpdateLastStorageAction($"Opening buy page at {entry.Name}");
@@ -432,7 +432,7 @@ public sealed partial class GameClient
         {
             EndTransaction();
             UpdateLastStorageAction($"Timeout opening buy page at {entry.Name}");
-            return false;
+            return BuyItemsResult.Success;
         }
         string[] buyKeys = { "@BUYSELLNEW", "@BUYSELL", "@BUYNEW", "@PEARLBUY", "@BUY" };
         var buyKey = page.Buttons.Select(b => b.Key).FirstOrDefault(k => buyKeys.Contains(k.ToUpper())) ?? "@BUY";
@@ -440,7 +440,7 @@ public sealed partial class GameClient
         {
             EndTransaction();
             UpdateLastStorageAction($"No buy option on {entry.Name}");
-            return false;
+            return BuyItemsResult.Success;
         }
 
         using (var cts = new CancellationTokenSource(NpcDialogTimeoutMs))
@@ -458,9 +458,9 @@ public sealed partial class GameClient
             }
         }
 
-        bool cantAfford = false;
+        var result = BuyItemsResult.Success;
         if (_lastNpcGoods != null)
-            cantAfford = await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
+            result = await BuyNeededItemsFromGoodsAsync(_lastNpcGoods, _lastNpcGoodsType);
 
         try
         {
@@ -472,7 +472,7 @@ public sealed partial class GameClient
         }
         EndTransaction();
         UpdateLastStorageAction($"Finished buying at {entry.Name}");
-        return cantAfford;
+        return result;
     }
 
     public async Task OpenBuyPageAsync(uint npcId)

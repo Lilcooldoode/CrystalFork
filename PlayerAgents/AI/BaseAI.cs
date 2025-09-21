@@ -1393,7 +1393,8 @@ public class BaseAI
         Success,
         PathFailed,
         NpcNotFound,
-        CantAfford
+        CantAfford,
+        InventoryFull
     }
 
     protected virtual Task BeforeNpcInteractionAsync(Point location, uint npcId, NpcEntry? entry, NpcInteractionType interactionType)
@@ -1443,8 +1444,11 @@ public class BaseAI
                         Client.StartNpcInteraction(npcId, entry);
                     break;
                 case NpcInteractionType.Buying:
-                    if (await Client.BuyNeededItemsAtNpcAsync(npcId))
+                    var buyResult = await Client.BuyNeededItemsAtNpcAsync(npcId);
+                    if (buyResult == BuyItemsResult.CantAfford)
                         return NpcInteractionResult.CantAfford;
+                    if (buyResult == BuyItemsResult.InventoryFull)
+                        return NpcInteractionResult.InventoryFull;
                     break;
                 case NpcInteractionType.Selling:
                     if (sellItems != null)
@@ -1773,6 +1777,8 @@ public class BaseAI
                 {
                     if (result == NpcInteractionResult.CantAfford)
                         cantAfford = true;
+                    else if (result == NpcInteractionResult.InventoryFull)
+                        TriggerInventoryRefresh();
                     break;
                 }
             }
