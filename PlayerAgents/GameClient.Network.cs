@@ -215,10 +215,11 @@ public sealed partial class GameClient
                     StartMapExpTracking(_currentMapFile);
                 break;
             case S.AddMember am:
+                bool wasGrouped = IsGrouped;
                 if (!_groupMembers.Contains(am.Name))
                     _groupMembers.Add(am.Name);
                 UpdateGroupLeader();
-                if (am.Name.Equals(PlayerName, StringComparison.OrdinalIgnoreCase))
+                if (!wasGrouped && IsGrouped)
                     PauseMapExpTracking();
                 break;
             case S.GroupInvite gi:

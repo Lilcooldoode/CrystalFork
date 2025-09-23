@@ -44,8 +44,17 @@ public sealed partial class GameClient
 
     public async Task LeaveGroupAsync()
     {
-        if (_stream == null || !IsGrouped) return;
-        await SetAllowGroupAsync(false);
+        if (_stream != null && IsGrouped)
+            await SetAllowGroupAsync(false);
+
+        if (_groupMembers.Count > 0)
+        {
+            _groupMembers.Clear();
+            UpdateGroupLeader();
+
+            if (!string.IsNullOrEmpty(_currentMapFile))
+                StartMapExpTracking(_currentMapFile);
+        }
     }
 
     public void LeaveGroup()

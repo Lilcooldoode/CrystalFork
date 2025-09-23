@@ -565,9 +565,11 @@ public class BaseAI
         int maxHP = Client.GetMaxHP();
         int maxMP = Client.GetMaxMP();
 
-        if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
+        var target = _currentTarget;
+
+        if (target != null && target.Type == ObjectType.Monster)
         {
-            int dmg = Client.MonsterMemory.GetDamage(_currentTarget.Name);
+            int dmg = Client.MonsterMemory.GetDamage(target.Name);
             if (dmg > 0 && Client.HP <= dmg)
             {
                 var pot = Client.FindPotion(true);
@@ -822,12 +824,30 @@ public class BaseAI
 
     private async Task<(List<Point> Path, int PathSteps, int StepsOutsideRadius)> FindGroupPathAsync(PlayerAgents.Map.MapData map, Point start, TrackedObject target, int radius)
     {
-        var path = await FindPathAsync(map, start, target.Location, target.Id, 0);
+        uint ignoreId = radius > 0 ? 0u : target.Id;
+        var path = await FindPathAsync(map, start, target.Location, ignoreId, radius);
         if (path.Count == 0)
             return (path, int.MaxValue, int.MaxValue);
 
         int pathSteps = Math.Max(path.Count - 1, 0);
-        int stepsOutsideRadius = pathSteps > radius ? pathSteps - radius : 0;
+        int stepsOutsideRadius;
+
+        if (radius > 0)
+        {
+            stepsOutsideRadius = pathSteps;
+            for (int i = 0; i < path.Count; i++)
+            {
+                if (Functions.MaxDistance(path[i], target.Location) <= radius)
+                {
+                    stepsOutsideRadius = i;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            stepsOutsideRadius = pathSteps;
+        }
 
         return (path, pathSteps, stepsOutsideRadius);
     }

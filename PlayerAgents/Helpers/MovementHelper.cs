@@ -5,14 +5,25 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using PlayerAgents.Map;
+using Shared;
 
 public static class MovementHelper
 {
+    private static bool IsBlocking(TrackedObject obj) =>
+        !obj.Dead && !obj.Hidden && (obj.Type == ObjectType.Player ||
+                                     obj.Type == ObjectType.Monster ||
+                                     obj.Type == ObjectType.Merchant);
+
     public static HashSet<Point> BuildObstacles(GameClient client, uint ignoreId = 0, int radius = 1)
     {
         var obstacles = new HashSet<Point>(client.BlockingCells);
-        if (ignoreId != 0 && client.TrackedObjects.TryGetValue(ignoreId, out var obj))
-            obstacles.Remove(obj.Location);
+        if (ignoreId != 0 && client.TrackedObjects.TryGetValue(ignoreId, out var obj) && IsBlocking(obj))
+        {
+            bool otherBlockers = client.TrackedObjects.Values.Any(o =>
+                o.Id != ignoreId && o.Location == obj.Location && IsBlocking(o));
+            if (!otherBlockers)
+                obstacles.Remove(obj.Location);
+        }
 
         if (radius > 0 && !string.IsNullOrEmpty(client.CurrentMapFile))
         {
@@ -75,7 +86,11 @@ public static class MovementHelper
         }
         int fx = Math.Clamp(origin.X + random.Next(-10, 11), 0, width - 1);
         int fy = Math.Clamp(origin.Y + random.Next(-10, 11), 0, height - 1);
-        return new Point(fx, fy);
+        var fallback = new Point(fx, fy);
+        if (map.IsWalkable(fallback.X, fallback.Y) && !obstacles.Contains(fallback))
+            return fallback;
+
+        return origin;
     }
 
     public static async Task<List<Point>> FindPathAsync(GameClient client, MapData map, Point start, Point dest, uint ignoreId = 0, int radius = 1)
