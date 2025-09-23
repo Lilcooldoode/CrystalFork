@@ -27,6 +27,7 @@ public class BaseAI
     private readonly Dictionary<string, int> _memberRegroupFailureCounts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _memberRegroupRetryTimes = new(StringComparer.OrdinalIgnoreCase);
 
+    private static readonly TimeSpan GroupCombatGracePeriod = TimeSpan.FromSeconds(5);
 
     protected virtual TimeSpan TargetSwitchInterval => TimeSpan.FromSeconds(3);
     // Using HashSet for faster Contains checks
@@ -861,10 +862,35 @@ public class BaseAI
         return path.GetRange(0, lastIndex + 1);
     }
 
+    private bool IsGroupInCombat()
+    {
+        var currentTarget = _currentTarget;
+        if (currentTarget != null && currentTarget.Type == ObjectType.Monster && !currentTarget.Dead)
+            return true;
+
+        var now = DateTime.UtcNow;
+        foreach (var obj in Client.TrackedObjects.Values)
+        {
+            if (obj.Type != ObjectType.Monster || obj.Dead || obj.Hidden) continue;
+            if (!obj.EngagedWith.HasValue) continue;
+            if (now - obj.LastEngagedTime > GroupCombatGracePeriod) continue;
+
+            if (obj.EngagedWith.Value == Client.ObjectId)
+                return true;
+            if (Client.IsGrouped && Client.IsGroupMember(obj.EngagedWith.Value))
+                return true;
+        }
+
+        return false;
+    }
+
     private async Task<bool> TryMaintainGroupSpacingAsync(PlayerAgents.Map.MapData map, Point current)
     {
-        const int followerRadius = 7;
-        const int leaderRadius = 10;
+        const int followerFollowRadius = 3;
+        const int followerCombatRadius = 9;
+        const int leaderRadius = 9;
+
+        int followerRadius = IsGroupInCombat() ? followerCombatRadius : followerFollowRadius;
 
         if (Client.GroupLeader != null && !Client.IsGroupLeader)
         {
