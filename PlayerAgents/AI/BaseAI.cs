@@ -923,7 +923,7 @@ public class BaseAI
             TrackedObject? farMember = null;
             List<Point>? regroupPath = null;
             string? farMemberName = null;
-            int farSteps = leaderRadius;
+            int farDistance = leaderRadius;
 
             foreach (var name in Client.GroupMembers)
             {
@@ -948,34 +948,46 @@ public class BaseAI
                     continue;
                 }
 
-                var (path, pathSteps, stepsOutsideRadius) = await FindGroupPathAsync(map, current, member, leaderRadius);
                 var key = member.Name;
-                if (path.Count == 0 || pathSteps == int.MaxValue)
-                {
-                    if (!_memberPathStepCounts.TryGetValue(key, out var recorded) || recorded != int.MaxValue)
-                    {
-                        Client.Log($"Unable to find path to group member {key}; they are out of range (radius {leaderRadius}).");
-                        _memberPathStepCounts[key] = int.MaxValue;
-                    }
-                    _memberRegroupFailureCounts.Remove(key);
-                    _memberRegroupRetryTimes.Remove(key);
-                    continue;
-                }
+                int distance = Functions.MaxDistance(current, member.Location);
 
-                if (stepsOutsideRadius > 0)
+                if (distance > leaderRadius)
                 {
-                    if (!_memberPathStepCounts.TryGetValue(key, out var recorded) || recorded != pathSteps)
+                    var (path, pathSteps, stepsOutsideRadius) = await FindGroupPathAsync(map, current, member, leaderRadius);
+                    if (path.Count == 0 || pathSteps == int.MaxValue)
                     {
-                        Client.Log($"Group member {key} is {pathSteps} steps away (allowed radius {leaderRadius}).");
-                        _memberPathStepCounts[key] = pathSteps;
+                        if (!_memberPathStepCounts.TryGetValue(key, out var recorded) || recorded != int.MaxValue)
+                        {
+                            Client.Log($"Unable to find path to group member {key}; they are out of range (radius {leaderRadius}).");
+                            _memberPathStepCounts[key] = int.MaxValue;
+                        }
+                        _memberRegroupFailureCounts.Remove(key);
+                        _memberRegroupRetryTimes.Remove(key);
+                        continue;
                     }
 
-                    if (pathSteps > farSteps)
+                    if (stepsOutsideRadius > 0)
                     {
-                        farSteps = pathSteps;
-                        farMember = member;
-                        farMemberName = key;
-                        regroupPath = TrimPathBySteps(path, stepsOutsideRadius);
+                        if (!_memberPathStepCounts.TryGetValue(key, out var recorded) || recorded != distance)
+                        {
+                            Client.Log($"Group member {key} is {distance} cells away (allowed radius {leaderRadius}).");
+                            _memberPathStepCounts[key] = distance;
+                        }
+
+                        if (distance > farDistance)
+                        {
+                            farDistance = distance;
+                            farMember = member;
+                            farMemberName = key;
+                            regroupPath = TrimPathBySteps(path, stepsOutsideRadius);
+                        }
+                    }
+                    else
+                    {
+                        if (_memberPathStepCounts.ContainsKey(key))
+                            _memberPathStepCounts.Remove(key);
+                        _memberRegroupFailureCounts.Remove(key);
+                        _memberRegroupRetryTimes.Remove(key);
                     }
                 }
                 else
@@ -2062,22 +2074,24 @@ public class BaseAI
                 await Task.Delay(WalkDelay);
                 continue;
             }
-            if (_currentTarget != null && !Client.TrackedObjects.ContainsKey(_currentTarget.Id))
+            var currentTarget = _currentTarget;
+            if (currentTarget != null && !Client.TrackedObjects.ContainsKey(currentTarget.Id))
             {
-                _lostTargetLocation = _currentTarget.Location;
+                _lostTargetLocation = currentTarget.Location;
                 _lostTargetPath = null;
                 _currentRoamPath = null;
                 _currentTarget = null;
                 _nextPathFindTime = DateTime.MinValue;
             }
-            if (_currentTarget != null && _currentTarget.Type == ObjectType.Monster)
+            currentTarget = _currentTarget;
+            if (currentTarget != null && currentTarget.Type == ObjectType.Monster)
             {
-                if (_currentTarget.Dead || _currentTarget.Hidden)
+                if (currentTarget.Dead || currentTarget.Hidden)
                 {
                     _nextTargetSwitchTime = DateTime.MinValue;
-                    if (_currentTarget.Hidden)
+                    if (currentTarget.Hidden)
                     {
-                        _lostTargetLocation = _currentTarget.Location;
+                        _lostTargetLocation = currentTarget.Location;
                         _lostTargetPath = null;
                         _currentRoamPath = null;
                     }
@@ -2088,15 +2102,16 @@ public class BaseAI
             int distance = 0;
             TrackedObject? closest = traveling ? null : FindClosestTarget(current, out distance);
 
-            if (!traveling && _currentTarget != null && _currentTarget.Type == ObjectType.Monster &&
-                !_currentTarget.Dead &&
-                Client.TrackedObjects.ContainsKey(_currentTarget.Id) &&
+            currentTarget = _currentTarget;
+            if (!traveling && currentTarget != null && currentTarget.Type == ObjectType.Monster &&
+                !currentTarget.Dead &&
+                Client.TrackedObjects.ContainsKey(currentTarget.Id) &&
                 closest != null && closest.Type == ObjectType.Monster &&
-                closest.Id != _currentTarget.Id &&
+                closest.Id != currentTarget.Id &&
                 DateTime.UtcNow < _nextTargetSwitchTime)
             {
-                closest = _currentTarget;
-                distance = Functions.MaxDistance(current, _currentTarget.Location);
+                closest = currentTarget;
+                distance = Functions.MaxDistance(current, currentTarget.Location);
             }
 
             if (closest != null)
